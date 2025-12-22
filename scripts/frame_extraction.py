@@ -20,10 +20,14 @@ def get_frames(video_path, size=224, num_frames=16):
     cap = cv2.VideoCapture(str(video_path))
     frames = []
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
     
     if total_frames <= 0:
         cap.release()
         return np.zeros((num_frames, size, size, 3), dtype=np.uint8)
+
+    if fps > 0:
+        total_frames = min(total_frames, int(fps * 8))
 
     indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
     current_idx = 0
@@ -33,6 +37,8 @@ def get_frames(video_path, size=224, num_frames=16):
         ret, frame = cap.read()
         if not ret: break
         
+        if current_idx >= total_frames: break
+
         if current_idx in indices:
             frame = cv2.resize(frame, (size, size), interpolation=cv2.INTER_LINEAR)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
