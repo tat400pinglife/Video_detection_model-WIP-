@@ -35,9 +35,8 @@ class TinyDeepfakeDetector(nn.Module):
         combined = torch.cat([self.rgb_branch(rgb), self.diff_branch(diff), self.fft_branch(fft)], dim=1)
         return self.classifier(combined)
 
-# --- 2. YOUR EXACT WORKING FRAME EXTRACTOR ---
+# --- 2. VIDEO PROCESSING UTILITIES ---
 def get_frames(video_path, size=256, num_frames=32):
-    # CRITICAL FIX: Ensure path is absolute (just like it was during training)
     # This fixes the "isOpened? False" error on Windows
     video_path = Path(video_path).resolve()
     
@@ -79,7 +78,7 @@ def get_frames(video_path, size=256, num_frames=32):
         padding = np.zeros((num_frames - len(frames), size, size, 3), dtype=np.uint8)
         if len(frames) > 0: frames = np.concatenate([frames, padding], axis=0)
         else: frames = padding
-    # --- End of your code ---
+
             
     return frames
 
@@ -139,15 +138,5 @@ def predict_video(model_path, video_path):
 if __name__ == "__main__":
     MODEL_FILE = "poc_model_256.pth"
     # Make sure this path exists relative to where you run the script
-    TEST_VIDEO = "data/videos/fake/car.mp4" 
-    predict_video(MODEL_FILE, TEST_VIDEO)
-    TEST_VIDEO = "data/videos/fake/weird dog.mp4" 
-    predict_video(MODEL_FILE, TEST_VIDEO)
-    TEST_VIDEO = "data/videos/real/ocotpus.mp4" 
-    predict_video(MODEL_FILE, TEST_VIDEO)
-    TEST_VIDEO = "data/videos/real/hair on fire.mp4" 
-    predict_video(MODEL_FILE, TEST_VIDEO)
-    TEST_VIDEO = "data/videos/fake/rabbit.mp4" 
-    predict_video(MODEL_FILE, TEST_VIDEO)
-    TEST_VIDEO = "data/videos/real/bear.mp4" 
+    TEST_VIDEO = "data/videos/maybes/crackhead.mp4" 
     predict_video(MODEL_FILE, TEST_VIDEO)
