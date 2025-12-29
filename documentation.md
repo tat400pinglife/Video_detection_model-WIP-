@@ -21,3 +21,10 @@ or have some form of offloading to avoid having a gazillion frames on disk\
 Next steps are to fine tune the algorithm but also look into a GPU (server, hugging face, or google)\
 to look into big data training and making a model with more parameters than like a hundred\
 opencv is giving me warnings but it runs so like lady justice i turn a blind eye\
+
+Session #4: research and model tweaks\
+Model now also takes into account the prnu variance and mean of frames aswell\
+Gate was included so that the prnu value doesnt weigh the same as other features\
+Convolution sizes have been modified for the prnu and visualization now inlcludes the prnu frames\
+Next try to find a way for the model to pinpoint artifacts or "suspicious frames" if it is determined to be fake\
+Also as of now the model has exceeded 100mb so it will be excluded from future updates, make own local model through models\

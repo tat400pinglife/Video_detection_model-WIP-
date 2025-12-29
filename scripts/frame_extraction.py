@@ -5,12 +5,6 @@ import torch
 from pathlib import Path
 from tqdm import tqdm
 
-# TODO: eventually will need to parallelize this since there is 500k videos, or 6mil dont shoot the messenger
-#       also will need to convert to tensors so the model can actually process them
-#       also will need to find out the normalized size of dataset, right now im just testing own videos
-#       bouta eat smth maybe take a break
-
-
 SOURCE_DIR = Path("./data/videos")
 OUTPUT_DIR = Path("./data/frames")
 TARGET_SIZE = 256
@@ -80,6 +74,26 @@ def compute_diff(frames):
         diffs.append(d)
     return np.array(diffs, dtype=np.float32) / 255.0
 
+def compute_prnu_residuals(frames):
+    # basically a high-pass filter to extract noise residuals (PRNU)
+    # taking the average over multiple frames can show a kind of fingerprint of a real camera
+
+    # Convert to grayscale float32
+    gray = np.dot(frames[..., :3], [0.299, 0.587, 0.114]).astype(np.float32)
+    
+    residuals = []
+    for i in range(len(gray)):
+        img = gray[i]
+        denoised = cv2.GaussianBlur(img, (5, 5), 0)
+        
+        # Subtract denoised from original to leave only noise/texture
+        noise = img - denoised
+        
+        residuals.append(noise)
+    
+    # Return normalized residuals (dividing by 255 puts noise in roughly -0.1 to 0.1 range)
+    return np.array(residuals, dtype=np.float32) / 255.0
+
 def process_folder(folder_name):
     input_path = SOURCE_DIR / folder_name
     output_path = OUTPUT_DIR / folder_name
@@ -93,16 +107,19 @@ def process_folder(folder_name):
         
         # Extract & Compute
         rgb = get_frames(video_file, size=TARGET_SIZE, num_frames=NUM_FRAMES)
+        
         fft = compute_fft(rgb)
         diff = compute_diff(rgb)
+        prnu = compute_prnu_residuals(rgb)  # <--- NEW PRNU EXTRACTION
         
         rgb_norm = rgb.astype(np.float32) / 255.0
 
         data = {
-            "rgb": torch.from_numpy(rgb_norm).permute(0, 3, 1, 2), # (T, C, H, W)
-            "fft": torch.from_numpy(fft).unsqueeze(1),             # (T, 1, H, W)
-            "diff": torch.from_numpy(diff).unsqueeze(1),           # (T, 1, H, W)
-            "label": 1 if folder_name == "fake" else 0             # Embed label
+            "rgb": torch.from_numpy(rgb_norm).permute(0, 3, 1, 2),   # (T, 3, H, W)
+            "fft": torch.from_numpy(fft).unsqueeze(1),               # (T, 1, H, W)
+            "diff": torch.from_numpy(diff).unsqueeze(1),             # (T, 1, H, W)
+            "prnu": torch.from_numpy(prnu).unsqueeze(1),             # (T, 1, H, W)
+            "label": 1 if folder_name == "fake" else 0
         }
         
         torch.save(data, save_path)

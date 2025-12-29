@@ -17,48 +17,47 @@ def show_comparison():
     fake_data, fake_name = load_random_sample("fake")
     
     if not real_data or not fake_data:
-        print("Error: Could not find processed files. Run process_data.py first.")
+        print("Error: Could not find processed files. Run frame_extraction.py first.")
         return
 
-    fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+    # UPDATED: 2 Rows, 4 Columns (Added PRNU)
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
     
-    # ROW 1: REAL
-    # RGB
-    rgb_real = real_data['rgb'][8].permute(1, 2, 0).numpy()
-    axes[0,0].imshow(np.clip(rgb_real, 0, 1))
-    axes[0,0].set_title(f"REAL: {real_name}\n(RGB Frame 8)")
-    axes[0,0].axis('off')
+    # --- HELPER TO PLOT ---
+    def plot_row(row_idx, data, name, label_type):
+        # 1. RGB
+        rgb = data['rgb'][8].permute(1, 2, 0).numpy()
+        axes[row_idx, 0].imshow(np.clip(rgb, 0, 1))
+        axes[row_idx, 0].set_title(f"{label_type}: {name}\n(RGB Frame 8)")
+        axes[row_idx, 0].axis('off')
+
+        # 2. Temporal Difference
+        diff = data['diff'][8].squeeze().numpy()
+        axes[row_idx, 1].imshow(diff, cmap='gray')
+        axes[row_idx, 1].set_title("Temporal Diff")
+        axes[row_idx, 1].axis('off')
+
+        # 3. Spatial FFT
+        fft = data['fft'][8].squeeze().numpy()
+        axes[row_idx, 2].imshow(fft, cmap='inferno')
+        axes[row_idx, 2].set_title("Spatial FFT")
+        axes[row_idx, 2].axis('off')
+
+        # 4. PRNU (Noise Residuals)
+        if 'prnu' in data:
+            prnu = data['prnu'][8].squeeze().numpy()
+            
+            axes[row_idx, 3].imshow(prnu, cmap='gray')
+            axes[row_idx, 3].set_title("PRNU (Noise Residual)")
+            axes[row_idx, 3].axis('off')
+        else:
+            axes[row_idx, 3].text(0.5, 0.5, "No PRNU Data", ha='center')
+
+    # Plot Real
+    plot_row(0, real_data, real_name, "REAL")
     
-    # Diff
-    diff_real = real_data['diff'][8].squeeze().numpy()
-    axes[0,1].imshow(diff_real, cmap='gray')
-    axes[0,1].set_title("Temporal Diff")
-    axes[0,1].axis('off')
-
-    # FFT
-    fft_real = real_data['fft'][8].squeeze().numpy()
-    axes[0,2].imshow(fft_real, cmap='inferno')
-    axes[0,2].set_title("Spatial FFT")
-    axes[0,2].axis('off')
-
-    # ROW 2: FAKE
-    # RGB
-    rgb_fake = fake_data['rgb'][8].permute(1, 2, 0).numpy()
-    axes[1,0].imshow(np.clip(rgb_fake, 0, 1))
-    axes[1,0].set_title(f"FAKE: {fake_name}\n(RGB Frame 8)")
-    axes[1,0].axis('off')
-
-    # Diff
-    diff_fake = fake_data['diff'][8].squeeze().numpy()
-    axes[1,1].imshow(diff_fake, cmap='gray')
-    axes[1,1].set_title("Temporal Diff")
-    axes[1,1].axis('off')
-
-    # FFT
-    fft_fake = fake_data['fft'][8].squeeze().numpy()
-    axes[1,2].imshow(fft_fake, cmap='inferno')
-    axes[1,2].set_title("Spatial FFT")
-    axes[1,2].axis('off')
+    # Plot Fake
+    plot_row(1, fake_data, fake_name, "FAKE")
 
     plt.tight_layout()
     plt.show()
