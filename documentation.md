@@ -28,3 +28,13 @@ Gate was included so that the prnu value doesnt weigh the same as other features
 Convolution sizes have been modified for the prnu and visualization now inlcludes the prnu frames\
 Next try to find a way for the model to pinpoint artifacts or "suspicious frames" if it is determined to be fake\
 Also as of now the model has exceeded 100mb so it will be excluded from future updates, make own local model through models\
+
+Session #5: New models with frame visualization\
+Additional models were made to pinpoint suspicious frames and show them\
+One is general classifier via frequency and spatial analysis with low prnu checnks\
+Additional now includes unet artifact hunter that returns frames\
+Temporal that shows any spikes in suspicious frames\
+Note that accuracy will be low, I was thinking i mislabled data but online models are certainly wrong\
+on atleast some of the videos that did not have obvious watermarking\
+Maybe consider combining the models but i don't want to overload one and make it unusable if reverted\
+Next, analyze accuracy and increase dataset\

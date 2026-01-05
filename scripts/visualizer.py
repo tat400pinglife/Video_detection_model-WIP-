@@ -8,7 +8,7 @@ def load_random_sample(folder):
     files = list(Path(f"data/frames/{folder}").glob("*.pt"))
     if not files: return None, None
     path = random.choice(files)
-    data = torch.load(path)
+    data = torch.load(path, weights_only=True)
     # Get middle frame (index 8)
     return data, path.name
 

@@ -1,2 +1,3 @@
 /data/frames
+*.pth
 poc_model_256.pth
