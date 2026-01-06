@@ -38,3 +38,14 @@ Note that accuracy will be low, I was thinking i mislabled data but online model
 on atleast some of the videos that did not have obvious watermarking\
 Maybe consider combining the models but i don't want to overload one and make it unusable if reverted\
 Next, analyze accuracy and increase dataset\
+
+Session #6: Thinking and planning\
+It has now occured to me now about a 2 weeks since the beginning of the project\
+That maybe it shouldn't be doing a general classification and it should first identify the type of video\
+prnu shouldn't apply to cgi or non-camera footage, and edited videos might skew temporal bias\
+So new architecture would look like a single top level classifier that then weighs gates depending\
+on the video type, where each branch would output a parameter that goes into a sigmoid to output a probability\
+Each branch would still return evidence via heatmap, temporal map, and gradient cam, but final decision would\ 
+fall to the sigmoid or algorithm so evidence might be choatic or messy but there still will be a answer\
+This would now require training a classifier, which means more data that needs to be labled and stored\
+Scratch that it will just learn the optimal weight\

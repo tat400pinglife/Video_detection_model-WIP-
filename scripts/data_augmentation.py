@@ -100,7 +100,7 @@ def augment_data():
             
             # Gaussian Noise
             # Forces model to ignore random camera grain and look for structural noise
-            noise = np.random.normal(0, 0.02, frames.shape).astype(np.float32)
+            noise = np.random.normal(0, 0.05, frames.shape).astype(np.float32)
             frames_noise = np.clip(frames + noise, 0, 1)
             save_augmented_sample(frames_noise, label, parent / f"{base_name}_aug_noise.pt")
             

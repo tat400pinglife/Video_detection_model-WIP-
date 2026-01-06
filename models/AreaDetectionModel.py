@@ -6,100 +6,77 @@ from pathlib import Path
 import numpy as np
 import cv2
 import random
-
-# IMPORT THE MODEL
 from model_architecture import ArtifactSegmentor
 
 class RealFramesDataset(Dataset):
     def __init__(self, root_dir):
-        self.root = Path(root_dir)
-        self.real_folder = self.root / "real"
-        self.files = list(self.real_folder.rglob("*.pt"))
-        
-        if not self.files:
-            print(f"CRITICAL ERROR: No .pt files found in {self.real_folder}")
-        else:
-            print(f"Found {len(self.files)} real samples for U-Net training.")
-        
-    def __len__(self):
-        return len(self.files)
-
+        # We only want REAL frames to synthetically damage them
+        self.files = list((Path(root_dir) / "real").rglob("*.pt"))
+        if not self.files: print("Warning: No real frames found for U-Net training.")
+    def __len__(self): return len(self.files)
     def __getitem__(self, idx):
-        path = self.files[idx]
         try:
-            data = torch.load(path, weights_only=False)
-            frame_idx = random.randint(0, 31)
-            rgb = data['rgb'][frame_idx].permute(1, 2, 0).numpy()
+            data = torch.load(self.files[idx], weights_only=False)
+            # Pick a random frame from the stack
+            rgb = data['rgb'][random.randint(0, 15)].permute(1, 2, 0).numpy()
             return rgb
-        except:
-            return np.zeros((256, 256, 3), dtype=np.float32)
-
-def create_training_batch(real_batch):
-    batch_size, h, w, c = real_batch.shape
-    frames_A = real_batch.numpy()
-    frames_B = np.roll(frames_A, shift=1, axis=0)
+        except: return np.zeros((256, 256, 3), dtype=np.float32)
+        
+def create_glitch_batch(real_imgs):
+    """
+    Simulates Ghosting Artifacts by blending two different frames.
+    (This was the previous version of the logic).
+    """
+    batch_size, h, w, c = real_imgs.shape
     
-    blended_batch = []
-    masks_batch = []
+    # Shift the images so we blend Image A with Image B (creating a ghost)
+    imgs_B = np.roll(real_imgs, 1, axis=0)
     
+    inputs, masks = [], []
     for i in range(batch_size):
-        imgA, imgB = frames_A[i], frames_B[i]
+        # 1. Create a random mask
         mask = np.zeros((h, w), dtype=np.float32)
+        cx, cy = random.randint(50, 200), random.randint(50, 200)
+        radius = random.randint(30, 60)
         
-        num_points = random.randint(3, 6)
-        points = []
-        for _ in range(num_points):
-            points.append([random.randint(0, w), random.randint(0, h)])
-        cv2.fillPoly(mask, np.array([points], dtype=np.int32), (1.0))
+        cv2.circle(mask, (cx, cy), radius, 1.0, -1)
         
-        k_size = random.choice([15, 21, 31])
-        mask = cv2.GaussianBlur(mask, (k_size, k_size), 10)
-        mask = mask[:, :, np.newaxis]
+        # Soften the edges so it isn't a perfect cutout
+        mask = cv2.GaussianBlur(mask, (15, 15), 0)[:,:,None]
         
-        blended = mask * imgB + (1 - mask) * imgA
-        noise = np.random.normal(0, 0.02, blended.shape).astype(np.float32)
-        blended = blended + (mask * noise)
+        # 2. Blend the two images
+        # Where mask is 1, use Image B. Where mask is 0, use Image A.
+        blended = mask * imgs_B[i] + (1 - mask) * real_imgs[i]
         
-        blended_batch.append(blended)
-        masks_batch.append(mask)
+        inputs.append(blended)
+        masks.append(mask)
         
-    inputs = torch.tensor(np.array(blended_batch), dtype=torch.float32).permute(0, 3, 1, 2)
-    targets = torch.tensor(np.array(masks_batch), dtype=torch.float32).permute(0, 3, 1, 2)
-    return inputs, targets
+    return torch.tensor(np.array(inputs)).permute(0,3,1,2).float(), torch.tensor(np.array(masks)).permute(0,3,1,2).float()
 
-def train_unet():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def train_artifact_expert():
+    device = torch.device("cpu")
     dataset = RealFramesDataset("./data/frames")
-    if len(dataset) == 0: return
-
-    loader = DataLoader(dataset, batch_size=2, shuffle=True, drop_last=True)
+    loader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True)
     
-    # Initialize from imported class
     model = ArtifactSegmentor().to(device)
-    
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.BCEWithLogitsLoss()
     
-    print("Starting U-Net Training...")
-    
+    print("Training Artifact Expert...")
     for epoch in range(1, 21):
-        model.train()
         total_loss = 0
         for real_batch in loader:
-            inputs, masks = create_training_batch(real_batch)
-            inputs, masks = inputs.to(device), masks.to(device)
-            
+            inputs, targets = create_glitch_batch(real_batch.numpy())
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, masks)
+            loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-            
         print(f"Epoch {epoch} | Loss: {total_loss/len(loader):.4f}")
         
     torch.save(model.state_dict(), "unet_artifact_hunter.pth")
-    print("U-Net Saved.")
+    print("Artifact Expert Saved.")
 
 if __name__ == "__main__":
-    train_unet()
+    train_artifact_expert()
