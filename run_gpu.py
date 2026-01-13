@@ -3,40 +3,46 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+assert torch.cuda.is_available()
 
-# Imports
 from model_architecture import MoE_Investigator
-from utils import get_frames, compute_features
+from utils_gpu import get_frames, compute_features 
 
 class DeepfakeCaseFile:
     def __init__(self, model_path="router_weights.pth"):
-        # 1. Force CPU for local testing
-        self.device = torch.device("cpu")
-        print(f">> Device Set: {self.device} (Local Mode)")
-        
-        # 2. Initialize System
-        # Note: If you haven't trained Audio/Router yet, it will use random weights for them.
+
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            print(f">> GPU Detected: {torch.cuda.get_device_name(0)}")
+            # Enable Benchmark Mode (optimizes C++ kernels for your specific GPU)
+            torch.backends.cudnn.benchmark = True 
+        else:
+            self.device = torch.device("cpu")
+            print(">> Warning: No GPU found.")
+
+        # 1. Initialize the Full System
+        # We assume the expert weights are already saved in their respective .pth files
         print("Loading Investigator System...")
         self.system = MoE_Investigator(
             temp_path="temporal_model.pth", 
             art_path="unet_artifact_hunter.pth", 
-            noise_path="poc_model_256.pth",
-            # audio_path="audio_expert.pth" # Uncomment when you have this
+            noise_path="poc_model_256.pth"
         ).to(self.device)
         
-        # 3. Load Router Weights
+        # 2. Load the Trained Router Weights
+        # (Only if you have trained the router, otherwise it uses random init)
         try:
             self.system.router.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
             print(">> Router Intelligence Loaded.")
         except:
-            print(">> Warning: Router weights not found or mismatch. Using untrained router (random strategy).")
+            print(">> Warning: Router weights not found. Using untrained router (heuristic mode).")
         
         self.system.eval()
-
+    
     def analyze(self, video_path):
         print(f"\n--- Analyzing Case: {Path(video_path).name} ---")
         
-        # 1. Get Data (Returns Tensors on CPU)
+        # 1. Get Data (Returns Tensors on GPU)
         frames = get_frames(video_path)
         if frames is None: return
         
@@ -62,6 +68,7 @@ class DeepfakeCaseFile:
             
             # --- Temporal Expert ---
             temp_logits = self.system.expert_temp(rgb_seq)
+            # We need the timeline for visualization
             temp_timeline = torch.sigmoid(temp_logits).squeeze().cpu().numpy() 
             temp_score = float(temp_timeline.mean())
 
@@ -80,7 +87,7 @@ class DeepfakeCaseFile:
 
             # --- Audio Expert ---
             if audio_in.sum() == 0:
-                print("  > No audio track detected (Skipping Audio Expert).")
+                print("  > No audio track detected.")
                 audio_score = 0.5
             else:
                 audio_logits = self.system.expert_audio(audio_in)
@@ -101,57 +108,45 @@ class DeepfakeCaseFile:
             self.visualize(final_prob, temp_timeline, (top_indices, art_masks, vis_frames), vis_prnu, vis_audio)
 
     def visualize(self, verdict, timeline, artifact_data, prnu_map, audio_spec):
-        import matplotlib.gridspec as gridspec # Import this locally or at top
-        
         top_indices, all_masks, all_frames = artifact_data
         
-        # Setup Figure
-        fig = plt.figure(figsize=(18, 9))
+        # Grid: 2 Rows. Top for metrics, Bottom for artifacts.
+        plt.figure(figsize=(18, 9))
         plt.suptitle(f"Deepfake Investigation Results | Verdict: {verdict:.1%} FAKE", fontsize=16, fontweight='bold')
-        
-        # Use GridSpec to handle different column counts
-        # We use 20 columns (LCM of 4 and 5) to align everything perfectly
-        gs = gridspec.GridSpec(2, 20, figure=fig)
 
-        # --- ROW 1: METRICS (4 Plots) ---
-        # Each plot takes 5 units of width (20 / 4 = 5)
+        # --- ROW 1: METRICS ---
         
         # 1. Temporal
-        ax1 = plt.subplot(gs[0, 0:5])
-        ax1.plot(timeline, color='crimson', marker='o')
-        ax1.axhline(0.5, color='gray', linestyle='--')
-        ax1.set_title("Temporal Glitch Timeline")
-        ax1.set_ylim(0, 1.1)
-        ax1.grid(alpha=0.3)
+        plt.subplot(2, 4, 1)
+        plt.plot(timeline, color='crimson', marker='o')
+        plt.axhline(0.5, color='gray', linestyle='--')
+        plt.title("Temporal Glitch Timeline")
+        plt.ylim(0, 1.1)
 
         # 2. Noise
-        ax2 = plt.subplot(gs[0, 5:10])
-        ax2.imshow(prnu_map, cmap='gray')
-        ax2.set_title("Camera Noise (PRNU)")
-        ax2.axis('off')
+        plt.subplot(2, 4, 2)
+        plt.imshow(prnu_map, cmap='gray')
+        plt.title("Camera Noise (PRNU)")
+        plt.axis('off')
         
-        # 3. Audio
-        ax3 = plt.subplot(gs[0, 10:15])
-        ax3.imshow(audio_spec, cmap='inferno', origin='lower')
-        ax3.set_title("Audio Spectrum")
-        ax3.axis('off')
+        # 3. Audio (NEW)
+        plt.subplot(2, 4, 3)
+        plt.imshow(audio_spec, cmap='inferno', origin='lower')
+        plt.title("Audio Spectrum")
+        plt.axis('off')
 
         # 4. Confidence
-        ax4 = plt.subplot(gs[0, 15:20])
-        ax4.bar(["Real", "Fake"], [1-verdict, verdict], color=['green', 'red'], alpha=0.8)
-        ax4.set_title(f"Confidence: {verdict:.2%}")
-        ax4.set_ylim(0, 1)
+        plt.subplot(2, 4, 4)
+        plt.bar(["Real", "Fake"], [1-verdict, verdict], color=['green', 'red'], alpha=0.8)
+        plt.title(f"Confidence: {verdict:.2%}")
+        plt.ylim(0, 1)
 
         # --- ROW 2: TOP 5 ARTIFACT FRAMES ---
-        # Each plot takes 4 units of width (20 / 5 = 4)
         for i, idx in enumerate(top_indices):
-            col_start = i * 4
-            ax = plt.subplot(gs[1, col_start : col_start + 4])
-            
             mask = all_masks[idx]
             frame = all_frames[idx]
             
-            # Overlay Logic
+            # Only overlay if suspicion exists
             if np.sum(mask > 0.5) > 10:
                 heatmap = cv2.applyColorMap(np.uint8(255 * mask), cv2.COLORMAP_JET)
                 heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
@@ -159,9 +154,11 @@ class DeepfakeCaseFile:
             else:
                 overlay = np.uint8(255 * frame)
 
-            ax.imshow(overlay)
-            ax.set_title(f"Frame {idx}\nScore: {np.sum(mask>0.5):.0f}")
-            ax.axis('off')
+            # Plot in positions 5, 6, 7, 8, 9
+            plt.subplot(2, 5, 6 + i) 
+            plt.imshow(overlay)
+            plt.title(f"Frame {idx}\nScore: {np.sum(mask>0.5):.0f}")
+            plt.axis('off')
 
         plt.tight_layout()
         plt.show()
@@ -169,5 +166,4 @@ class DeepfakeCaseFile:
 if __name__ == "__main__":
     # Point this to a video file
     case = DeepfakeCaseFile()
-    # Ensure this path is correct
-    case.analyze("data/videos/maybes/cat and rat.mp4")
+    case.analyze("data/videos/maybes/canyon flood.mp4")

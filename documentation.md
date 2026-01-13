@@ -49,3 +49,9 @@ Each branch would still return evidence via heatmap, temporal map, and gradient 
 fall to the sigmoid or algorithm so evidence might be choatic or messy but there still will be a answer\
 This would now require training a classifier, which means more data that needs to be labled and stored\
 Scratch that it will just learn the optimal weight\
+
+Session#7: Adding cuda support and expanding analysis\
+Added parameters to check for cuda compatible gpus and added an audio branch\
+Next look into pinpointing audio discrepencies based on time and look into creating a docker\
+and look into maybe porting to web app\
+Also will need to sort files to make it more clean and need to modify data_augment for new tensors\

@@ -20,7 +20,14 @@ class NoiseDataset(Dataset):
         return prnu_var, torch.tensor(data['label'], dtype=torch.float32)
 
 def train_noise_expert():
-    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"GPU Detected: {torch.cuda.get_device_name(0)}")
+        # Enable Benchmark Mode (optimizes C++ kernels for your specific GPU)
+        torch.backends.cudnn.benchmark = True 
+    else:
+        device = torch.device("cpu")
+        print("Warning: No GPU found. Running on CPU")
     dataset = NoiseDataset("./data/frames")
     loader = DataLoader(dataset, batch_size=4, shuffle=True)
     

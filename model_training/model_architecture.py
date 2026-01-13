@@ -2,15 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# ==========================================
-# 1. THE EXPERTS
-# ==========================================
 
 class AudioExpert(nn.Module):
-    """
-    Analyzes Audio Mel-Spectrograms for robotic artifacts.
-    Input: (B, 1, 128, 128) - Log-Mel Spectrogram
-    """
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(

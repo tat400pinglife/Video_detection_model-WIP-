@@ -110,7 +110,7 @@ def process_folder(folder_name):
         
         fft = compute_fft(rgb)
         diff = compute_diff(rgb)
-        prnu = compute_prnu_residuals(rgb)  # <--- NEW PRNU EXTRACTION
+        prnu = compute_prnu_residuals(rgb)  
         
         rgb_norm = rgb.astype(np.float32) / 255.0
 

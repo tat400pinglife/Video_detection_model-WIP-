@@ -54,7 +54,14 @@ def create_glitch_batch(real_imgs):
     return torch.tensor(np.array(inputs)).permute(0,3,1,2).float(), torch.tensor(np.array(masks)).permute(0,3,1,2).float()
 
 def train_artifact_expert():
-    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"GPU Detected: {torch.cuda.get_device_name(0)}")
+        # Enable Benchmark Mode (optimizes C++ kernels for your specific GPU)
+        torch.backends.cudnn.benchmark = True 
+    else:
+        device = torch.device("cpu")
+        print("Warning: No GPU found. Running on CPU")
     dataset = RealFramesDataset("./data/frames")
     loader = DataLoader(dataset, batch_size=4, shuffle=True, drop_last=True)
     
