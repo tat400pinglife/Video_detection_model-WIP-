@@ -4,72 +4,117 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
+
 from model_architecture import PRNUBranch
 
+
 class NoiseDataset(Dataset):
-    def __init__(self, root_dir):
-        self.files = list(Path(root_dir).rglob("*.pt"))
+    def __init__(self, root_dirs):
+        self.files = []
+        for d in root_dirs:
+            self.files.extend(list(Path(d).rglob("*.pt")))
+        
         random.shuffle(self.files)
+        print(f">> Found {len(self.files)} samples for Noise training.")
+        
     def __len__(self): return len(self.files)
+
     def __getitem__(self, idx):
-        data = torch.load(self.files[idx], weights_only=False)
-        # Extract PRNU Variance (B, 1, 256, 256)
-        prnu = data['prnu']
-        prnu_var = prnu.var(dim=0)
-        if prnu_var.ndim == 2: prnu_var = prnu_var.unsqueeze(0)
-        return prnu_var, torch.tensor(data['label'], dtype=torch.float32)
+        try:
+            data = torch.load(self.files[idx], weights_only=False)
+            
+            # The file contains 'prnu': (1, 1, 256, 256) -> The Variance Map
+            # We squeeze the first dim to get (1, 256, 256)
+            prnu_map = data['prnu'].squeeze(0)
+            
+            # Label
+            label = torch.tensor([data['label']], dtype=torch.float32)
+            
+            # If map is NaN, replace with zeros
+            if torch.isnan(prnu_map).any():
+                prnu_map = torch.zeros_like(prnu_map)
+                
+            return prnu_map, label
+            
+        except Exception as e:
+            print(f"Error loading {self.files[idx]}: {e}")
+            return torch.zeros((1, 256, 256)), torch.tensor([0.0])
+
 
 def train_noise_expert():
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print(f"GPU Detected: {torch.cuda.get_device_name(0)}")
-        # Enable Benchmark Mode (optimizes C++ kernels for your specific GPU)
-        torch.backends.cudnn.benchmark = True 
-    else:
-        device = torch.device("cpu")
-        print("Warning: No GPU found. Running on CPU")
-    dataset = NoiseDataset("./data/frames")
-    loader = DataLoader(dataset, batch_size=4, shuffle=True)
+    # Setup
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"--- Training Noise Expert on {device} ---")
     
-    # We combine the feature extractor + a temporary classification head
-    backbone = PRNUBranch()
-    head = nn.Linear(32*32*32, 1)
+    # Paths
+    train_dirs = ["./data/processed_data/real", "./data/processed_data/fake"]
+    dataset = NoiseDataset(train_dirs)
     
-    optimizer = optim.Adam(list(backbone.parameters()) + list(head.parameters()), lr=0.001)
+    # Batch Loader
+    loader = DataLoader(dataset, batch_size=32, shuffle=True)
+    
+    # Initialize Model components
+    # 1. The ConvNet Feature Extractor
+    net = PRNUBranch().to(device)
+    # 2. The Classifier Head (Linear layer)
+    head = nn.Linear(32*32*32, 1).to(device)
+    
+    # Optimizer targets BOTH parts
+    optimizer = optim.Adam(list(net.parameters()) + list(head.parameters()), lr=0.001)
     criterion = nn.BCEWithLogitsLoss()
     
-    print("Training Noise Expert...")
-    for epoch in range(1, 11):
+    print("Starting Training...")
+    
+    epochs = 20
+    for epoch in range(1, epochs+1):
         total_loss = 0
-        for x, y in loader:
+        correct = 0
+        total = 0
+        
+        net.train()
+        head.train()
+        
+        for prnu_maps, labels in loader:
+            prnu_maps = prnu_maps.to(device) # (B, 1, 256, 256)
+            labels = labels.to(device)       # (B, 1)
+            
             optimizer.zero_grad()
-            feats = backbone(x)
-            out = head(feats).view(-1)
-            loss = criterion(out, y)
+            
+            features = net(prnu_maps)
+            logits = head(features)
+            
+            loss = criterion(logits, labels)
+            
+            if torch.isnan(loss):
+                print("!! Warning: Loss is NaN. Skipping batch.")
+                continue
+
             loss.backward()
             optimizer.step()
+            
             total_loss += loss.item()
-        # Inside the training loop
-        avg_loss = total_loss/len(loader)
-        print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+            
+            # Accuracy
+            preds = torch.sigmoid(logits) > 0.5
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+            
+        avg_loss = total_loss / len(loader)
+        acc = correct / total if total > 0 else 0
         
+        print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | Acc: {acc:.2%}")
         if avg_loss < 0.15:
-            print(">> Early Stopping: Model is starting to memorize.")
+            print(">> Early Stopping: Model is performing well.")
             break
-        print(f"Epoch {epoch} | Loss: {total_loss/len(loader):.4f}")
-    
 
-    # Save the WHOLE state (Backbone + Head)
-    # We save it as a dictionary so MoE can load it cleanly
+    # Save
+    # We save the WHOLE state (Net + Head) so the main script can load it intelligently
     torch.save({
-        'net.0.weight': backbone.net[0].weight, # Mapping might be tricky, saving full object is safer
-        'prnu_branch': backbone.state_dict(),
+        'net': net.state_dict(),
         'head': head.state_dict()
-    }, "noise_expert_full.pth")
-    
-    # SIMPLER: Just save the backbone for the MoE
-    torch.save(backbone.state_dict(), "poc_model_256.pth") 
-    print("Noise Expert Saved.")
+    }, "./models/poc_model_256.pth")
+    print("\nTraining Complete.")
+    print(">> 'poc_model_256.pth' saved.")
 
 if __name__ == "__main__":
     train_noise_expert()

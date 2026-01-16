@@ -64,10 +64,10 @@ def train_the_investigator():
     # 2. Initialize the MoE System
     print("Initializing System & Loading Experts...")
     model = MoE_Investigator(
-        temp_path="temporal_model.pth", 
-        art_path="unet_artifact_hunter.pth", 
-        noise_path="poc_model_256.pth",
-        audio_path="audio_expert.pth" 
+        temp_path="./models/temporal_model.pth", 
+        art_path="./models/unet_artifact_hunter.pth", 
+        noise_path="./models/poc_model_256.pth",
+        audio_path="./models/audio_expert.pth" 
     ).to(device)
     
     # 3. Define Optimizer
@@ -79,7 +79,7 @@ def train_the_investigator():
     criterion = nn.BCELoss()
     
     # 4. Train
-    epochs = 10
+    epochs = 25
     print("Starting Router Training...")
     
     for epoch in range(1, epochs+1):
@@ -116,9 +116,12 @@ def train_the_investigator():
 
         avg_loss = total_loss / len(loader)
         print(f"Epoch {epoch} | Average Loss: {avg_loss:.4f}")
+        if avg_loss < 0.15:
+            print(">> Early Stopping: Router is performing well.")
+            break
 
     # 5. Save the Brain
-    torch.save(model.router.state_dict(), "router_weights.pth")
+    torch.save(model.router.state_dict(), "./models/router_weights.pth")
     print("\nTraining Complete.")
     print(">> 'router_weights.pth' saved.")
     print(">> You can now run 'run.py' to use the full trained system.")

@@ -55,3 +55,9 @@ Added parameters to check for cuda compatible gpus and added an audio branch\
 Next look into pinpointing audio discrepencies based on time and look into creating a docker\
 and look into maybe porting to web app\
 Also will need to sort files to make it more clean and need to modify data_augment for new tensors\
+
+Session#8: Cleaned up structure and debugged artifact branch\
+Added some more folders to tidy files up, looked into the artifact branch to make sure it was atually working\
+as of now it can identify unusual artifacts like discoloration, weird blurring, etc. It can identify hotspots but\
+struggles with videos it has never seen. This is expected to improve when the real big dataset comes in, but as of now\
+it remains to be of low importance in the final determination of the video\

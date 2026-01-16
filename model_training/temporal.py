@@ -27,7 +27,7 @@ def train_temporal_expert():
     else:
         device = torch.device("cpu")
         print("Warning: No GPU found. Running on CPU")
-    dataset = SequenceDataset("./data/frames")
+    dataset = SequenceDataset("./data/processed_data")
     loader = DataLoader(dataset, batch_size=2, shuffle=True)
     
     # Initialize from scratch (No pretrained_cnn needed anymore)
@@ -37,7 +37,7 @@ def train_temporal_expert():
     criterion = nn.BCEWithLogitsLoss()
     
     print("Training Temporal Expert...")
-    for epoch in range(1, 16):
+    for epoch in range(1, 26):
         total_loss = 0
         for x, y in loader:
             optimizer.zero_grad()
@@ -51,7 +51,7 @@ def train_temporal_expert():
             print(">> Early Stopping: Model is starting to memorize.")
             break
         
-    torch.save(model.state_dict(), "temporal_model.pth")
+    torch.save(model.state_dict(), "./models/temporal_model.pth")
     print("Temporal Expert Saved.")
 
 if __name__ == "__main__":

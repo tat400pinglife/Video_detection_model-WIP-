@@ -109,7 +109,7 @@ def train_audio_branch():
             break
 
     # 4. Save
-    torch.save(model.state_dict(), "audio_expert.pth")
+    torch.save(model.state_dict(), "./models/audio_expert.pth")
     print("\nTraining Complete.")
     print(">> 'audio_expert.pth' saved.")
 

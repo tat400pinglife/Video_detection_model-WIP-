@@ -87,7 +87,7 @@ def compute_features(frames, video_path, device=None):
     if device is None:
         device = torch.device("cpu")
 
-    # --- 1. Visual Pre-processing ---
+    # 1. Visual Pre-processing
     frames_norm = frames.astype(np.float32) / 255.0
     mid_idx = len(frames) // 2
     gray_stack = np.dot(frames_norm[..., :3], [0.299, 0.587, 0.114]).astype(np.float32)
@@ -104,10 +104,10 @@ def compute_features(frames, video_path, device=None):
         prnu_stack.append(g - denoised)
     prnu_var = np.var(np.array(prnu_stack), axis=0)
 
-    # --- 2. Audio Pre-processing ---
+    # 2. Audio Pre-processing
     spectrogram = extract_audio_spectrogram(video_path)
     
-    # --- 3. Tensor Conversion ---
+    # 3. Tensor Conversion
     
     t_rgb_mid = torch.from_numpy(frames_norm[mid_idx]).permute(2, 0, 1).unsqueeze(0).float().to(device)
     t_rgb_seq = torch.from_numpy(frames_norm).permute(0, 3, 1, 2).unsqueeze(0).float().to(device)

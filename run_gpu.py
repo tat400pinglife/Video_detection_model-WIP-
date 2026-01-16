@@ -9,7 +9,7 @@ from model_architecture import MoE_Investigator
 from utils_gpu import get_frames, compute_features 
 
 class DeepfakeCaseFile:
-    def __init__(self, model_path="router_weights.pth"):
+    def __init__(self, model_path="models/router_weights.pth"):
 
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -24,9 +24,10 @@ class DeepfakeCaseFile:
         # We assume the expert weights are already saved in their respective .pth files
         print("Loading Investigator System...")
         self.system = MoE_Investigator(
-            temp_path="temporal_model.pth", 
-            art_path="unet_artifact_hunter.pth", 
-            noise_path="poc_model_256.pth"
+            temp_path="models/temporal_model.pth", 
+            art_path="models/unet_artifact_hunter.pth", 
+            noise_path="models/poc_model_256.pth",
+            audio_path="models/audio_expert.pth"
         ).to(self.device)
         
         # 2. Load the Trained Router Weights

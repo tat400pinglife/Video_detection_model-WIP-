@@ -29,10 +29,9 @@ def extract_audio_spectrogram(video_path, target_shape=(128, 128)):
         # If no audio track found
         return np.zeros(target_shape, dtype=np.float32)
 
-def compute_features(frames, video_path, device=None): # <--- NOTE: Added video_path arg
-    # ... [Keep existing image code] ...
-    
-    # 1. Existing Image Processing
+def compute_features(frames, video_path, device=None): 
+
+    # 1. Image Processing
     frames_norm = frames.astype(np.float32) / 255.0
     mid_idx = len(frames) // 2
     gray_stack = np.dot(frames_norm[..., :3], [0.299, 0.587, 0.114]).astype(np.float32)
@@ -46,7 +45,7 @@ def compute_features(frames, video_path, device=None): # <--- NOTE: Added video_
     for g in gray_stack: prnu_stack.append(g - cv2.GaussianBlur(g, (5, 5), 0))
     prnu_var = np.var(np.array(prnu_stack), axis=0)
 
-    # 2. NEW: Audio Processing
+    # 2. Audio Processing
     spectrogram = extract_audio_spectrogram(video_path) # (128, 128) numpy
     
     # 3. Tensors
@@ -65,7 +64,7 @@ def compute_features(frames, video_path, device=None): # <--- NOTE: Added video_
         "rgb_seq": t_rgb_seq,
         "rgb_batch": t_rgb_batch,
         "prnu": t_prnu,
-        "audio": t_audio, # <--- New Key
+        "audio": t_audio,
         "vis_frames": frames_norm,
-        "vis_audio": spectrogram # <--- For plotting
+        "vis_audio": spectrogram # For plotting
     }
