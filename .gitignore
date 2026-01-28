@@ -3,3 +3,4 @@
 poc_model_256.pth
 *.pth
 /data/processed_data
+/uploads

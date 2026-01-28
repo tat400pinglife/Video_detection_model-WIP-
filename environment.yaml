@@ -1,0 +1,28 @@
+name: ai-video
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - matplotlib
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cpuonly 
+  - pip:
+    - opencv-python-headless
+    - librosa
+    - fastapi
+    - uvicorn
+    - python-multipart
+    - celery
+    - redis
+    - jinja2
+    - aiofiles
+    - scikit-learn
+    - scipy
+    - tqdm
+    - soundfile

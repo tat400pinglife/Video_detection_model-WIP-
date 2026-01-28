@@ -61,3 +61,7 @@ Added some more folders to tidy files up, looked into the artifact branch to mak
 as of now it can identify unusual artifacts like discoloration, weird blurring, etc. It can identify hotspots but\
 struggles with videos it has never seen. This is expected to improve when the real big dataset comes in, but as of now\
 it remains to be of low importance in the final determination of the video\
+
+Session#9: added docker(may not be final) and ported minimal environment
+Added some UI and a docker backend with celery process management. html is completely generated I touched up the scripting\
+There is a txt file to help with setup and modification.

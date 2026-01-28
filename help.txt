@@ -1,0 +1,107 @@
+IF YOU ONLY CARE ABOUT THE ACTUAL MODEL SKIP TO PART 3
+
+[PART 1] QUICK START (RUNNING FROM FRESH CLONE)
+
+1. PREREQUISITES
+   - Install Docker Desktop: https://www.docker.com/products/docker-desktop/
+
+2. LAUNCH THE SYSTEM
+   Open a terminal (PowerShell or Bash) in the folder and run:
+
+    WAITTTT, if you have the gpu available first go to part 2 and then come back here
+    to access the ui.
+    
+   $ docker-compose up --build
+
+   - This will download Redis, build the Python environment, and start the app.
+   - Wait until you see: "Uvicorn running on http://0.0.0.0:8000"
+
+3. ACCESS THE DASHBOARD
+   - Open Browser: http://localhost:8000
+   - Upload a video to start analysis.
+   - Results + Report Image will be generated in the /uploads folder.
+
+[PART 2] HOW TO ENABLE GPU (NVIDIA CUDA)
+
+By default, the system runs on CPU to be compatible with all machines. 
+and since I don't have a NVIDIA gpu.
+If you have an NVIDIA GPU, follow these steps to speed up inference by 50xish.
+
+STEP 1: PREPARE THE HOST MACHINE (ONCE ONLY)
+    Install "NVIDIA Container Toolkit" for Docker.
+      - Windows: It is included in Docker Desktop (ensure WSL2 backend is selected).
+      - Linux: Run `sudo apt-get install -y nvidia-container-toolkit` and restart Docker.
+
+STEP 2: MODIFY 'docker-compose.yml'
+   You need to tell Docker to pass the GPU through to the worker container.
+   
+   Change the 'worker' service section to look like this:
+   
+   worker:
+     build: .
+     container_name: deepfake-worker
+     command: celery -A worker.celery_app worker --pool=solo --loglevel=info
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               count: 1
+               capabilities: [gpu]
+     volumes:
+       - ./uploads:/app/uploads
+       - .:/app
+
+STEP 3: MODIFY 'worker.py'
+   Update the device flag to use CUDA.
+
+   Find this line (approx line 23):
+   DEVICE = torch.device("cpu")
+
+   Change it to:
+   DEVICE = torch.device("cuda")
+
+STEP 4: MODIFY 'Dockerfile' (OPTIONAL)
+   The default 'python:3.9' image works, but the official PyTorch image is faster 
+   for GPU tasks because it has pre-compiled CUDA libraries.
+
+   Change the first line of Dockerfile from:
+   FROM python:3.9
+
+   To:
+   FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+
+   (Note: You may need to remove 'torch' and 'torchvision' from requirements.txt
+    if you use this base image, as they are already installed).
+
+STEP 5: REBUILD
+   Run this command to apply changes:
+   $ docker-compose up --build
+
+ERRORS I GOT
+
+1. "Docker error: port 6379 is already allocated"
+   - Solution: You have a zombie Redis (try not to build too many times) running. Run:
+     $ docker rm -f deepfake-redis
+
+2. "Analysis freezes during processing"
+   - Cause: Docker needs time to bootup or restart.
+   - Solution: Look for signs of life by "docker-compose logs -f" or restart by "docker-compose down"
+   -           and then "docker-compose up". If that doesnt do the trick then "docker-compose restart api"
+
+3. "Report image not downloading"
+   - Cause: Browser permission or mount delay.
+   - Solution: Restart the API container:
+     $ docker-compose restart api
+
+[PART 3] I only want to run the script to test the models
+
+1. PREREQUISITES
+    - Install python and anaconda if not already
+
+2. SETTING UP THE environment
+    - run "conda env create -f conda.yml", YOU CAN CHANGE THE NAME of the environment in the file
+
+3. RUN THE MODEL
+    - There are two scripts that run the model, one uses cpu and one does not.
+    - make sure all weights are present in the models folder.
