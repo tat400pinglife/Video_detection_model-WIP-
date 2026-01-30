@@ -100,7 +100,7 @@ ERRORS I GOT
     - Install python and (!anaconda if not already!), not required to use conda env
 
 2. SETTING UP THE environment
-    - run "conda env create -f conda.yml", YOU CAN CHANGE THE NAME of the environment in the file
+    - run "conda env create -f env.yml", YOU CAN CHANGE THE NAME of the environment in the file
     - if you dont want to use conda im pretty sure running pip install -r requirements.txt will get almost all libraries
 
 3. RUN THE MODEL
