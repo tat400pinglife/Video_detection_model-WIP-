@@ -5,7 +5,7 @@ from pathlib import Path
 import random
 
 def load_random_sample(folder):
-    files = list(Path(f"data/frames/{folder}").glob("*.pt"))
+    files = list(Path(f"data/processed_data/{folder}").glob("*.pt"))
     if not files: return None, None
     path = random.choice(files)
     data = torch.load(path, weights_only=True)

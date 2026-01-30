@@ -1,58 +1,97 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
+import os
 from pathlib import Path
-import random
+
+# Import the specific model architecture
 from model_architecture import TemporalDetector
 
-class SequenceDataset(Dataset):
-    def __init__(self, root_dir):
-        self.files = list(Path(root_dir).rglob("*.pt"))
-        random.shuffle(self.files)
-    def __len__(self): return len(self.files)
-    def __getitem__(self, idx):
-        data = torch.load(self.files[idx], weights_only=False)
-        rgb = data['rgb'] # (32, 3, 256, 256)
-        label = float(data['label'])
-        labels = torch.full((32, 1), label, dtype=torch.float32)
-        return rgb, labels
+# sht was giving fitting errors so gpt did some magic
 
-def train_temporal_expert():
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print(f"GPU Detected: {torch.cuda.get_device_name(0)}")
-        # Enable Benchmark Mode (optimizes C++ kernels for your specific GPU)
-        torch.backends.cudnn.benchmark = True 
-    else:
-        device = torch.device("cpu")
-        print("Warning: No GPU found. Running on CPU")
-    dataset = SequenceDataset("./data/processed_data")
-    loader = DataLoader(dataset, batch_size=2, shuffle=True)
+# CONFIG
+DATA_FOLDER = "./data/processed_data"
+SAVE_PATH = "models/temporal_model.pth"
+BATCH_SIZE = 32
+LR = 0.0001
+EPOCHS = 15
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class TemporalDataset(Dataset):
+    def __init__(self, folder_path):
+        self.files = list(Path(folder_path).rglob("*.pt"))
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        try:
+            data = torch.load(self.files[idx])
+            # Extract Diff Tensor [1, 256, 256]
+            x = data['diff'].float()
+            # Ensure correct shape
+            if x.ndim == 2: x = x.unsqueeze(0)
+            
+            y = torch.tensor([data['label']], dtype=torch.float32)
+            return x, y
+        except Exception:
+            return torch.zeros(1, 256, 256), torch.tensor([0.0])
+
+def train():
+    print(f"found device: {DEVICE}")
     
-    # Initialize from scratch (No pretrained_cnn needed anymore)
-    model = TemporalDetector(pretrained_cnn=None).to(device)
+    # Setup Data
+    dataset = TemporalDataset(DATA_FOLDER)
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_set, val_set = random_split(dataset, [train_size, val_size])
     
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
+
+    # Setup Model
+    model = TemporalDetector().to(DEVICE)
+    optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.BCEWithLogitsLoss()
-    
-    print("Training Temporal Expert...")
-    for epoch in range(1, 26):
-        total_loss = 0
-        for x, y in loader:
+
+    # Loop
+    best_acc = 0.0
+    for epoch in range(EPOCHS):
+        model.train()
+        train_loss = 0
+        
+        for X, y in train_loader:
+            X, y = X.to(DEVICE), y.to(DEVICE)
+            noise = torch.randn_like(X) * 0.1  # Adjust when needed
+            X = X + noise
             optimizer.zero_grad()
-            out = model(x)
-            loss = criterion(out, y)
+            pred = model(X)
+            loss = criterion(pred, y)
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
-        print(f"Epoch {epoch} | Loss: {total_loss/len(loader):.4f}")
-        if total_loss/len(loader) < 0.13:
-            print(">> Early Stopping: Model is starting to memorize.")
-            break
+            train_loss += loss.item()
+            
+        # Validation
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for X, y in val_loader:
+                X, y = X.to(DEVICE), y.to(DEVICE)
+                pred = (torch.sigmoid(model(X)) > 0.5).float()
+                correct += (pred == y).sum().item()
+                total += y.size(0)
         
-    torch.save(model.state_dict(), "./models/temporal_model.pth")
-    print("Temporal Expert Saved.")
+        acc = 100 * correct / (total + 1e-8)
+        print(f"Epoch {epoch+1} | Loss: {train_loss/len(train_loader):.4f} | Acc: {acc:.2f}%")
+        
+        if acc >= best_acc:
+            best_acc = acc
+            os.makedirs("models", exist_ok=True)
+            torch.save(model.state_dict(), SAVE_PATH)
+
+    print(f"Done. Saved to {SAVE_PATH}")
 
 if __name__ == "__main__":
-    train_temporal_expert()
+    train()

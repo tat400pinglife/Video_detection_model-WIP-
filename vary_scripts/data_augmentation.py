@@ -4,7 +4,7 @@ import cv2
 from pathlib import Path
 from tqdm import tqdm
 
-# may not use this
+# may not use this, if want to use update to new
 
 def compute_fft(frames):
     gray = np.dot(frames[..., :3], [0.299, 0.587, 0.114])

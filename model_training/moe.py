@@ -1,130 +1,149 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from pathlib import Path
-import random
+from torch.utils.data import Dataset, DataLoader, random_split
+import os
+from tqdm import tqdm
+import numpy as np
 
-# Import your Architecture
 from model_architecture import MoE_Investigator
 
-class DeepfakeConsolidatedDataset(Dataset):
-    def __init__(self, root_dirs):
-        """
-        root_dirs: List of folders, e.g. ["data/processed_data/real", "data/processed_data/fake"]
-        """
+# CONFIGURATION
+DATA_FOLDER = "./data/processed_data"
+BATCH_SIZE = 16    # Keep this small for stability, increase to 32 later
+LR = 0.0001        # Lower learning rate is safer, but slower
+EPOCHS = 20
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# DATASET
+class ForensicDataset(Dataset):
+    def __init__(self, folder_path):
         self.files = []
-        for d in root_dirs:
-            self.files.extend(list(Path(d).rglob("*.pt")))
-        
-        # Shuffle to mix Real and Fake
-        random.shuffle(self.files)
-        print(f">> Found {len(self.files)} consolidated training samples.")
-        
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                if file.endswith(".pt"):
+                    self.files.append(os.path.join(root, file))
+        print(f"Dataset loaded: {len(self.files)} samples.")
+
     def __len__(self): return len(self.files)
 
     def __getitem__(self, idx):
-        # Load the dictionary saved by process_data.py
-        data = torch.load(self.files[idx], weights_only=False)
-        
-        # 1. RGB Sequence: (32, 3, 256, 256)
-        rgb_seq = data['rgb'] 
-        
-        # 2. RGB Middle Frame: (3, 256, 256)
-        mid_idx = rgb_seq.shape[0] // 2
-        rgb_mid = rgb_seq[mid_idx]
-        
-        # 3. PRNU: (1, 1, 256, 256) -> Squeeze to (1, 256, 256) if needed
-        prnu = data['prnu']
-        if prnu.dim() == 4: prnu = prnu.squeeze(0)
+        try:
+            path = self.files[idx]
+            data = torch.load(path, weights_only=False)
             
-        # 4. Audio: (1, 1, 128, 128) -> Squeeze to (1, 128, 128)
-        audio = data['audio']
-        if audio.dim() == 4: audio = audio.squeeze(0)
+            # Helper to squeeze dims and protect against NaNs
+            def fix(t): 
+                if t.ndim == 2: t = t.unsqueeze(0)
+                if t.ndim == 4: t = t.squeeze(0)
+                # NAN GUARD: Replace broken math with zeros
+                return torch.nan_to_num(t.float(), nan=0.0)
+
+            rgb   = data['rgb_mid'].float()
+            diff  = fix(data['diff'])
+            prnu  = fix(data['prnu'])
+            fft   = fix(data['fft'])
+            audio = fix(data['audio'])
+            label = torch.tensor([data['label']], dtype=torch.float32)
             
-        # 5. Label
-        label = torch.tensor([data['label']], dtype=torch.float32)
-        
-        return rgb_mid, rgb_seq, prnu, audio, label
+            return rgb, diff, prnu, fft, audio, label
+        except:
+            # Return safe dummy data if file is corrupt
+            return (torch.zeros(3,256,256), torch.zeros(1,256,256), torch.zeros(1,256,256), 
+                    torch.zeros(1,256,256), torch.zeros(1,128,128), torch.tensor([0.0]))
 
+# TRAINING LOOP
+def train():
+    print(f"Initializing STABLE MoE Training on {DEVICE}...")
+    
+    full_dataset = ForensicDataset(DATA_FOLDER)
+    if len(full_dataset) == 0: return
 
-def train_the_investigator():
-    # Setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"--- Training on {device} ---")
+    train_size = int(0.8 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
+    train_set, val_set = random_split(full_dataset, [train_size, val_size])
     
-    # 1. Load Data
-    # Point this to where process_data.py saved your files
-    train_dirs = ["data/processed_data/real", "data/processed_data/fake"]
-    dataset = DeepfakeConsolidatedDataset(train_dirs)
-    
-    # Batch size can be small because the model is huge (Loaded with experts)
-    loader = DataLoader(dataset, batch_size=4, shuffle=True)
-    
-    # 2. Initialize the MoE System
-    print("Initializing System & Loading Experts...")
+    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader   = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False)
+
     model = MoE_Investigator(
-        temp_path="./models/temporal_model.pth", 
-        art_path="./models/unet_artifact_hunter.pth", 
-        noise_path="./models/poc_model_256.pth",
-        audio_path="./models/audio_expert.pth" 
-    ).to(device)
+        temp_path="models/temporal_model.pth",
+        art_path="models/artifact_model.pth",
+        noise_path="models/noise_model.pth",
+        freq_path="models/frequency_model.pth",
+        audio_path="models/audio_model.pth"
+    ).to(DEVICE)
+
+    # Use a slightly more robust optimizer setting
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    criterion = nn.BCEWithLogitsLoss()
+
+    best_acc = 0.0
     
-    # 3. Define Optimizer
-    # CRITICAL: We only want to train the ROUTER. The experts should be frozen.
-    # The MoE_Investigator class already freezes experts in __init__, but we filter here to be safe.
-    optimizer = optim.Adam(model.router.parameters(), lr=0.001)
-    
-    # Binary Cross Entropy Loss (Real vs Fake)
-    criterion = nn.BCELoss()
-    
-    # 4. Train
-    epochs = 25
-    print("Starting Router Training...")
-    
-    for epoch in range(1, epochs+1):
-        total_loss = 0
+    for epoch in range(EPOCHS):
+        model.train()
+        running_loss = 0.0
+        avg_weights = np.zeros(5) 
         
-        model.train() # Set Router to train mode
+        loop = tqdm(train_loader, desc=f"Epoch {epoch+1}")
         
-        for batch_idx, (mid, seq, prnu, audio, label) in enumerate(loader):
-            # Move to GPU
-            mid = mid.to(device)     # (B, 3, H, W)
-            seq = seq.to(device)     # (B, T, 3, H, W)
-            prnu = prnu.to(device)   # (B, 1, H, W)
-            audio = audio.to(device) # (B, 1, H, W)
-            label = label.to(device) # (B, 1)
+        for batch in loop:
+            rgb, diff, prnu, fft, audio, labels = [x.to(DEVICE) for x in batch]
             
+            # Skip empty batches
+            if rgb.sum() == 0: continue
+
             optimizer.zero_grad()
             
-            # Forward Pass (The Router decides weights -> Experts run -> Verdict returned)
-            verdict, weights = model(mid, seq, prnu, audio)
+            # Forward Pass
+            predictions, route_weights = model(rgb, diff, prnu, fft, audio)
+            loss = criterion(predictions, labels)
             
-            # Calculate Loss
-            loss = criterion(verdict, label)
-            
-            # Backprop (Updates ONLY the Router's decision making)
+            if torch.isnan(loss):
+                print("WARNING: Loss became NaN. Skipping batch to save model.")
+                continue
+
             loss.backward()
+
+            # gradient clipping for stability
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
             optimizer.step()
             
-            total_loss += loss.item()
+            running_loss += loss.item()
+            avg_weights += route_weights.detach().cpu().numpy().mean(axis=0)
             
-            # Optional: Print weights every 10 batches to watch it learn
-            if batch_idx % 10 == 0:
-                w = weights[0].detach().cpu().numpy()
-                print(f"   [Batch {batch_idx}] Loss: {loss.item():.4f} | Weights: Temp={w[0]:.2f} Art={w[1]:.2f} Noise={w[2]:.2f} Audio={w[3]:.2f}")
+        avg_weights /= len(train_loader)
+        val_acc = evaluate(model, val_loader)
+        
+        # Visualize Weights
+        w_str = " | ".join([f"{x*100:.1f}%" for x in avg_weights])
+        
+        print(f"E{epoch+1} Loss: {running_loss/len(train_loader):.3f} | Acc: {val_acc:.1f}%")
+        print(f"Weights: [ Motn | Artf | Nois | Audi | Freq ]")
+        print(f"         [ {w_str} ]")
 
-        avg_loss = total_loss / len(loader)
-        print(f"Epoch {epoch} | Average Loss: {avg_loss:.4f}")
-        if avg_loss < 0.15:
-            print(">> Early Stopping: Router is performing well.")
-            break
+        if val_acc >= best_acc:
+            best_acc = val_acc
+            os.makedirs("models", exist_ok=True)
+            torch.save(model.state_dict(), "models/router_weights.pth")
 
-    # 5. Save the Brain
-    torch.save(model.router.state_dict(), "./models/router_weights.pth")
-    print("\nTraining Complete.")
-    print(">> 'router_weights.pth' saved.")
-    print(">> You can now run 'run.py' to use the full trained system.")
+def evaluate(model, loader):
+    model.eval()
+    correct = 0; total = 0
+    with torch.no_grad():
+        for batch in loader:
+            rgb, diff, prnu, fft, audio, labels = [x.to(DEVICE) for x in batch]
+            if rgb.sum() == 0: continue
+            
+            preds, _ = model(rgb, diff, prnu, fft, audio)
+            
+            # Use Sigmoid for binary classification
+            predicted_labels = (torch.sigmoid(preds) > 0.5).float()
+            correct += (predicted_labels == labels).sum().item()
+            total += labels.size(0)
+            
+    return 100 * correct / (total + 1e-8)
 
 if __name__ == "__main__":
-    train_the_investigator()
+    train()

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from model_architecture import TinyDeepfakeDetector, ArtifactSegmentor, TemporalDetector
-from utils import DeepfakeGradCAM, visualize_gradcam
+from vary_scripts.utils import DeepfakeGradCAM, visualize_gradcam
 
 # flags
 RUN_CLASSIFIER = True      # Step 1: Real vs Fake Check

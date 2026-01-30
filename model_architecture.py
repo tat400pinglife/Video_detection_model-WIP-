@@ -2,40 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# ==========================================
-# 1. THE EXPERTS
-# ==========================================
+# 1. EXPERT MODELS
 
 class AudioExpert(nn.Module):
-    """
-    Analyzes Audio Mel-Spectrograms for robotic artifacts.
-    Input: (B, 1, 128, 128) - Log-Mel Spectrogram
-    """
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            # Block 1
-            nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(),
-            nn.MaxPool2d(2), # 64x64
-            # Block 2
-            nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.MaxPool2d(2), # 32x32
-            # Block 3
-            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.MaxPool2d(2), # 16x16
-            # Block 4
-            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1,1)),
+            nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.AdaptiveAvgPool2d((1,1)),
             nn.Flatten(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1)
+            nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, 1)
         )
+    def forward(self, x): return self.net(x)
 
-    def forward(self, x):
-        return self.net(x)
-
-class PRNUBranch(nn.Module):
+class PRNUBranch(nn.Module): # Noise
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
@@ -43,6 +25,19 @@ class PRNUBranch(nn.Module):
             nn.Conv2d(8, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2), nn.Dropout(0.4),
             nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
             nn.Flatten()
+        )
+    def forward(self, x): return self.net(x)
+
+class FrequencyExpert(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Takes 1-channel FFT Spectrum [B, 1, 256, 256]
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 32 * 32, 256), nn.ReLU(), nn.Linear(256, 1)
         )
     def forward(self, x): return self.net(x)
 
@@ -66,17 +61,20 @@ class ArtifactSegmentor(nn.Module):
         return self.final(d1)
 
 class TemporalDetector(nn.Module):
-    def __init__(self, pretrained_cnn=None):
+    def __init__(self):
         super().__init__()
-        self.cnn = nn.Sequential(nn.Conv2d(3, 16, 3, 1, 1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2), nn.Conv2d(16, 32, 3, 1, 1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2), nn.Conv2d(32, 64, 3, 1, 1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2), nn.Flatten())
-        self.lstm = nn.LSTM(input_size=64 * 32 * 32, hidden_size=128, num_layers=1, batch_first=True, bidirectional=True)
-        self.classifier = nn.Sequential(nn.Linear(128 * 2, 64), nn.ReLU(), nn.Linear(64, 1))
+        # Input is now 1-channel Diff Tensor [B, 1, 256, 256], not a sequence
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 16, 3, 1, 1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, 3, 1, 1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, 1, 1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 32 * 32, 128), nn.ReLU(), nn.Linear(128, 1)
+        )
     def forward(self, x):
-        b, t, c, h, w = x.size(); c_in = x.view(b * t, c, h, w); features = self.cnn(c_in); features_seq = features.view(b, t, -1)
-        lstm_out, _ = self.lstm(features_seq); return self.classifier(lstm_out)
+        return self.cnn(x)
 
-
-# router
+# 2. ROUTER & SYSTEM
 
 class InvestigatorRouter(nn.Module):
     def __init__(self):
@@ -87,60 +85,71 @@ class InvestigatorRouter(nn.Module):
             nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.AdaptiveAvgPool2d((1,1)),
             nn.Flatten()
         )
-        self.fc = nn.Linear(64, 4)
+        self.fc = nn.Linear(64, 5)
 
     def forward(self, x):
         features = self.cnn(x)
         logits = self.fc(features)
         return F.softmax(logits, dim=1)
 
-
 class MoE_Investigator(nn.Module):
-    def __init__(self, temp_path=None, art_path=None, noise_path=None, audio_path=None):
+    def __init__(self, temp_path=None, art_path=None, noise_path=None, audio_path=None, freq_path=None):
         super().__init__()
         
         self.router = InvestigatorRouter()
         
-        self.expert_temp  = TemporalDetector()
+        self.expert_temp  = TemporalDetector()  
         self.expert_art   = ArtifactSegmentor()
         self.expert_audio = AudioExpert() 
+        self.expert_freq  = FrequencyExpert()  
         self.expert_noise_net  = PRNUBranch()
         self.expert_noise_head = nn.Linear(32*32*32, 1)
 
         # LOAD WEIGHTS
-        if temp_path: self._load_safe(self.expert_temp, temp_path, "Temporal")
+        if temp_path: self._load_safe(self.expert_temp, temp_path, "Temporal(Diff)")
         if art_path:  self._load_safe(self.expert_art, art_path, "Artifact")
         if audio_path: self._load_safe(self.expert_audio, audio_path, "Audio")
+        if freq_path: self._load_safe(self.expert_freq, freq_path, "Frequency")
         if noise_path: self._load_noise_smart(noise_path)
             
         # FREEZE EVERYTHING
         self._freeze(self.expert_temp)
         self._freeze(self.expert_art)
         self._freeze(self.expert_audio)
+        self._freeze(self.expert_freq)
         self._freeze(self.expert_noise_net)
 
-    def forward(self, rgb_mid, rgb_seq, prnu_var, audio_spec):
-        """
-        audio_spec: (B, 1, 128, 128) - Spectrogram
-        """
-        weights = self.router(rgb_mid) # (B, 4)
+    def forward(self, rgb_mid, diff_tensor, prnu_var, fft_var, audio_spec):
+        # Inputs:
+        # - rgb_mid: (B, 3, 256, 256) 
+        # - diff_tensor: (B, 1, 256, 256)
+        # - prnu_var: (B, 1, 256, 256) 
+        # - fft_var: (B, 1, 256, 256)
+        # - audio_spec: (B, 1, 128, 128) 
+
+        weights = self.router(rgb_mid) # (B, 5)
         
-        # Expert Opinions
-        out_temp = torch.sigmoid(self.expert_temp(rgb_seq)).mean(dim=1)
+        # 1. Temporal (Diff) Expert
+        out_temp = torch.sigmoid(self.expert_temp(diff_tensor))
         
+        # 2. Artifact Expert
         out_art_map = torch.sigmoid(self.expert_art(rgb_mid))
         out_art = out_art_map.flatten(1).max(1)[0].unsqueeze(1)
         
+        # 3. Noise (PRNU) Expert
         out_noise = torch.sigmoid(self.expert_noise_head(self.expert_noise_net(prnu_var)))
+
+        # 4. Frequency (FFT) Expert
+        out_freq = torch.sigmoid(self.expert_freq(fft_var))
         
-        # Audio Expert (Handle missing audio case)
+        # 5. Audio Expert (Handle missing audio)
         if audio_spec is not None and audio_spec.sum() != 0:
             out_audio = torch.sigmoid(self.expert_audio(audio_spec))
         else:
-            # If no audio, return neutral 0.5 (Router should learn to ignore this via weights)
             out_audio = torch.full_like(out_noise, 0.5)
 
-        experts = torch.cat([out_temp, out_art, out_noise, out_audio], dim=1)
+        # Fusion
+        experts = torch.cat([out_temp, out_art, out_noise, out_audio, out_freq], dim=1)
         verdict = (experts * weights).sum(dim=1, keepdim=True)
         
         return verdict, weights
@@ -151,7 +160,6 @@ class MoE_Investigator(nn.Module):
         try: model.load_state_dict(torch.load(path, weights_only=True)); print(f">> Loaded {name} Expert.")
         except Exception as e: print(f"!! Failed to load {name} Expert: {e}")
     def _load_noise_smart(self, path):
-        # (Same logic as before, abbreviated for space)
         try:
             state = torch.load(path, weights_only=True)
             if any(k.startswith('net.') for k in state.keys()): self.expert_noise_net.load_state_dict(state, strict=False)

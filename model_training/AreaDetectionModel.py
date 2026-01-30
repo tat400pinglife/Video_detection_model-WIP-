@@ -52,7 +52,7 @@ def create_glitch_batch(real_imgs_batch):
         artifact[:, :, c_idx] *= random.uniform(0.8, 1.2) # range 0.8 to 1.2 20% brightness/color change
         artifact = np.clip(artifact, 0, 1)
 
-        # --- C. Blend ---
+        # C. Blend
         # Real * (1-Mask) + Fake * Mask
         blended = img * (1 - mask_blur) + artifact * mask_blur
         
@@ -108,7 +108,7 @@ class RealTensorDataset(Dataset):
 def train_artifact_expert():
     # Setup Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"--- Training Artifact Expert on {device} ---")
+    print(f"Found device: {device}")
     
     # 1. Load Data (Tensors)
     # Point this to your PROCESSED REAL data
@@ -155,23 +155,23 @@ def train_artifact_expert():
             print(">> Early Stopping: Model is performing well.")
             break
         
-        # Save Debug Image (Every 5 Epochs)
-        if epoch % 5 == 0:
-            with torch.no_grad():
-                # Grab first item in batch
-                pred = torch.sigmoid(logits[0]).cpu().numpy().squeeze()
-                in_img = inputs[0].permute(1,2,0).cpu().numpy() # Back to HWC
-                gt_mask = masks[0].cpu().numpy().squeeze()
+        # Save Debug Image (Every 5 Epochs) uncomment to see pictures
+        # if epoch % 5 == 0:
+        #     with torch.no_grad():
+        #         # Grab first item in batch
+        #         pred = torch.sigmoid(logits[0]).cpu().numpy().squeeze()
+        #         in_img = inputs[0].permute(1,2,0).cpu().numpy() # Back to HWC
+        #         gt_mask = masks[0].cpu().numpy().squeeze()
                 
-                # Stack images side-by-side
-                debug_img = np.hstack([in_img, np.stack([pred]*3, axis=-1), np.stack([gt_mask]*3, axis=-1)])
-                debug_img = (debug_img * 255).astype(np.uint8)
-                cv2.imwrite(f"debug_epoch_{epoch}.png", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
+        #         # Stack images side-by-side
+        #         debug_img = np.hstack([in_img, np.stack([pred]*3, axis=-1), np.stack([gt_mask]*3, axis=-1)])
+        #         debug_img = (debug_img * 255).astype(np.uint8)
+        #         cv2.imwrite(f"debug_epoch_{epoch}.png", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
 
     # 3. Save Model
-    torch.save(model.state_dict(), "./models/unet_artifact_hunter.pth")
+    torch.save(model.state_dict(), "./models/artifact_model.pth")
     print("\n>> Training Complete.")
-    print(">> Saved 'unet_artifact_hunter.pth'")
+    print(">> Saved 'artifact_model.pth'")
 
 if __name__ == "__main__":
     train_artifact_expert()
