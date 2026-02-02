@@ -1,7 +1,7 @@
 import os
 import matplotlib
 # CRITICAL FIX: Set backend to 'Agg' BEFORE importing pyplot.
-# This prevents it from trying to open a window on the server.
+# This prevents it from trying to open a window on the server (Docker).
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -24,43 +24,55 @@ warnings.filterwarnings("ignore")
 redis_url = 'redis://redis:6379/0'
 celery_app = Celery('deepfake_worker', broker=redis_url, backend=redis_url)
 
-DEVICE = torch.device("cpu") # Change to "cuda" if available in Docker
+# Docker Configuration
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MODEL_DIR = "./models" 
 
 print(f"[INFO] Initializing MoE System on {DEVICE}...")
 
+# Global system variable
 system = None
 
-try:
-    # Initialize the Full 5-Expert System
-    system = MoE_Investigator(
-        temp_path=f"{MODEL_DIR}/temporal_model.pth", 
-        art_path=f"{MODEL_DIR}/unet_artifact_hunter.pth", 
-        noise_path=f"{MODEL_DIR}/poc_model_256.pth",
-        freq_path=f"{MODEL_DIR}/frequency_model.pth",  # <--- NEW
-        audio_path=f"{MODEL_DIR}/audio_expert.pth"
-    ).to(DEVICE)
+def load_models():
+    global system
+    try:
+        system = MoE_Investigator(
+            temp_path=f"{MODEL_DIR}/temporal_lstm.pth",
+            art_path=f"{MODEL_DIR}/artifact_model.pth", 
+            noise_path=f"{MODEL_DIR}/noise_model.pth",
+            freq_path=f"{MODEL_DIR}/frequency_model.pth", 
+            audio_path=f"{MODEL_DIR}/audio_model.pth"
+        ).to(DEVICE)
 
-    router_path = f"{MODEL_DIR}/router_weights.pth"
-    if os.path.exists(router_path):
-        system.router.load_state_dict(torch.load(router_path, map_location=DEVICE, weights_only=True))
-        print(">> Router Intelligence Loaded.")
-    else:
-        print(">> Warning: Router weights missing. Using random strategy.")
-    
-    system.eval()
-    print("[INFO] System Ready.")
+        router_path = f"{MODEL_DIR}/router_weights.pth"
+        if os.path.exists(router_path):
+            # Load router weights (map_location is vital for CPU/Docker)
+            system.router.load_state_dict(
+                torch.load(router_path, map_location=DEVICE, weights_only=True)
+            )
+            print(">> Router Intelligence Loaded.")
+        else:
+            print(">> Warning: Router weights missing. Using random strategy.")
+        
+        system.eval()
+        print("[INFO] System Ready.")
+        return True
 
-except Exception as e:
-    print(f"[CRITICAL] Failed to load models: {e}")
-    system = None
+    except Exception as e:
+        print(f"[CRITICAL] Failed to load models: {e}")
+        return False
+
+# Attempt to load immediately on startup
+load_models()
 
 @celery_app.task(bind=True)
 def analyze_task(self, video_path):
     print(f"\n--- Analyzing Case: {Path(video_path).name} ---")
     
+    # Reload models if they failed or were lost
     if system is None:
-        return {"status": "Failed", "error": "AI Models failed to load."}
+        if not load_models():
+            return {"status": "Failed", "error": "AI Models failed to load."}
 
     try:
         # 1. Get Data
@@ -68,52 +80,67 @@ def analyze_task(self, video_path):
         if frames is None: 
             return {"status": "Failed", "error": "Could not extract frames"}
             
-        # 2. Extract Features (RGB, Diff, FFT, PRNU, Audio)
+        # 2. Extract Features
         print("   Extracting forensic traces...")
+        # device=DEVICE ensures tensors are created on correct device
         feats = compute_features(frames, video_path, device=DEVICE)
         
         # Unpack Inputs
-        rgb_mid = feats["rgb_mid"]
+        rgb_mid   = feats["rgb_mid"]
         rgb_batch = feats["rgb_batch"]
-        diff    = feats["diff"]
-        prnu    = feats["prnu"]
-        fft     = feats["fft"]
-        audio   = feats["audio"]
+        diff_seq  = feats["diff_seq"] # [1, 31, 1, 256, 256] -> The sequence for LSTM
+        prnu      = feats["prnu"]
+        fft       = feats["fft"]
+        audio     = feats["audio"]
         
         with torch.no_grad():
             # A. Router Strategy
             weights = system.router(rgb_mid)
-            # Unpack 5 weights
             w_temp, w_art, w_noise, w_freq, w_audio = weights[0].cpu().numpy()
             
             # B. Experts Execution
             
-            # 1. Temporal (Motion)
-            # Run on sequence of diffs for timeline
-            gray_frames = np.dot(feats['vis_frames'][..., :3], [0.299, 0.587, 0.114])
-            diff_stack = []
-            for i in range(len(gray_frames) - 1):
-                d = np.abs(gray_frames[i] - gray_frames[i+1])
-                diff_stack.append(d)
-            diff_stack = np.array(diff_stack)
+            # 1. TEMPORAL (LSTM Sliding Window)
+            # We need to slice the 31-frame sequence into windows of 5 frames
+            full_timeline_tensor = diff_seq.squeeze(0) # [31, 1, 256, 256]
+            SEQ_LEN = 5
+            windows = []
             
-            t_diff_seq = torch.from_numpy(diff_stack).unsqueeze(1).float().to(DEVICE)
-            
-            temp_logits = system.expert_temp(t_diff_seq)
-            temp_timeline = torch.sigmoid(temp_logits).squeeze().cpu().numpy()
-            temp_score = float(temp_timeline.max())
+            # Sliding Window Logic
+            if len(full_timeline_tensor) >= SEQ_LEN:
+                for i in range(len(full_timeline_tensor) - SEQ_LEN + 1):
+                    windows.append(full_timeline_tensor[i : i+SEQ_LEN])
+                
+                # Stack into batch: [Num_Windows, 5, 1, 256, 256]
+                batch_windows = torch.stack(windows).to(DEVICE)
+                
+                # Run LSTM
+                temp_logits = system.expert_temp(batch_windows)
+                temp_probs = torch.sigmoid(temp_logits).squeeze().cpu().numpy()
+                
+                # Handle edge case (single window result)
+                if temp_probs.ndim == 0: temp_probs = np.array([temp_probs])
+                
+                temp_score = float(temp_probs.max())
+                temp_timeline = temp_probs # For visualization
+            else:
+                # Video too short
+                temp_score = 0.5
+                temp_timeline = np.zeros(10)
 
             # 2. Artifacts
             art_logits = system.expert_art(rgb_batch)
             art_masks = torch.sigmoid(art_logits).squeeze(1).cpu().numpy()
             art_score = float(art_masks.max())
             
-            # Top 5 Frames
+            # Top 5 Frames for Viz
             frame_scores = np.mean(art_masks, axis=(1, 2))
             top_indices = np.argsort(frame_scores)[::-1][:5]
             
             # 3. Noise
-            noise_logits = system.expert_noise_head(system.expert_noise_net(prnu))
+            # Note: In MoE class, noise is split. We call head(net(x))
+            noise_feat = system.expert_noise_net(prnu)
+            noise_logits = system.expert_noise_head(noise_feat)
             noise_score = float(torch.sigmoid(noise_logits).item())
 
             # 4. Frequency (FFT)
@@ -122,9 +149,9 @@ def analyze_task(self, video_path):
 
             # 5. Audio
             if audio.sum() == 0 or audio.max() < 0.01:
-                print(">> No audio track detected (or silence).")
+                print("   > Audio: Silence detected/ignored.")
                 audio_score = 0.5
-                w_audio = 0.0 # Force weight to 0
+                w_audio = 0.0 # Force weight to zero
             else:
                 audio_logits = system.expert_audio(audio)
                 audio_score = float(torch.sigmoid(audio_logits).item())
@@ -136,29 +163,27 @@ def analyze_task(self, video_path):
                          (freq_score * w_freq) + \
                          (audio_score * w_audio)
             
-            # Normalize if weights changed
             total_w = w_temp + w_art + w_noise + w_freq + w_audio
             if total_w > 0: final_prob /= total_w
             
             verdict_text = 'FAKE' if final_prob > 0.5 else 'REAL'
 
-            # D. Visualization (Save to Disk)
+            # D. Visualization
             vis_data = {
                 "verdict": final_prob,
                 "scores": [temp_score, art_score, noise_score, freq_score, audio_score],
                 "weights": [w_temp, w_art, w_noise, w_freq, w_audio],
                 "timeline": temp_timeline,
-                "diff": diff.squeeze().cpu().numpy(),
                 "prnu": prnu.squeeze().cpu().numpy(),
                 "fft":  fft.squeeze().cpu().numpy(),
                 "audio": feats["vis_audio"],
                 "artifacts": (top_indices, art_masks, feats["vis_frames"])
             }
 
-            # Generate Report Filename
+            # Save report alongside video
             report_filename = f"{Path(video_path).stem}_report.png"
-            # Save to /app/uploads folder
-            report_path = os.path.join(os.path.dirname(video_path), report_filename)
+            report_dir = os.path.dirname(video_path)
+            report_path = os.path.join(report_dir, report_filename)
             
             save_visual_report(report_path, vis_data)
 

@@ -9,7 +9,8 @@ import warnings
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-from model_architecture import MoE_Investigator
+# from model_architecture import MoE_Investigator
+from architecture import MoE_Investigator
 from imports.utils import get_frames, compute_features
 
 class DeepfakeCaseFile:
@@ -213,7 +214,9 @@ class DeepfakeCaseFile:
             ax.axis('off')
 
         plt.tight_layout()
+        plt.savefig("investigation_report.png")
         plt.show()
+
 
 if __name__ == "__main__":
     VIDEO_FILE = "data/videos/fake/car.mp4" 

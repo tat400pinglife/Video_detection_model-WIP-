@@ -3,3 +3,5 @@
 /uploads
 /resources
 *.pth
+/data
+/models

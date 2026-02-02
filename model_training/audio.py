@@ -17,8 +17,6 @@ class FastAudioDataset(Dataset):
         self.files = list(Path(root_dir).rglob("*.pt"))
         self.labels = []
         
-        # Infer labels from folder structure (Assumes .../real/*.pt and .../fake/*.pt)
-        # This takes 0.1 seconds instead of 10 minutes
         print(f"Indexing {len(self.files)} files...")
         
         valid_files = []
@@ -66,7 +64,7 @@ class FastAudioDataset(Dataset):
             # On file corruption, return None
             return None
 
-# --- CUSTOM BATCH BUILDER ---
+# CUSTOM BATCH BUILDER
 def drop_silence_collate(batch):
     """
     Filters out 'None' samples (silent audio) from the batch.
@@ -110,7 +108,7 @@ def train():
     # 4. Loaders
     train_loader = DataLoader(
         train_set, 
-        batch_size=16, 
+        batch_size=32, 
         sampler=sampler, # Balances the training
         collate_fn=drop_silence_collate,
         num_workers=0 # Set to 2 or 4 on Linux/Mac
@@ -119,22 +117,24 @@ def train():
     # Val loader doesn't need sampler, just shuffle=False
     val_loader = DataLoader(
         val_set, 
-        batch_size=16, 
+        batch_size=32, 
         shuffle=False,
         collate_fn=drop_silence_collate
     )
 
     # 5. Model
     model = AudioExpert().to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
     criterion = nn.BCEWithLogitsLoss()
     
     print(f"Starting Training (Train: {train_size}, Val: {val_size})...")
     
-    best_val_acc = 0.0
+    best_val_acc = 100.0
+    patience = 5
+    trigger_times = 0
     
-    for epoch in range(10):
-        # --- TRAIN ---
+    for epoch in range(100):
+        # TRAIN
         model.train()
         train_loss = 0
         
@@ -151,7 +151,7 @@ def train():
             
             train_loss += loss.item()
             
-        # --- VALIDATE ---
+        # VALIDATE
         model.eval()
         correct = 0
         total = 0
@@ -176,12 +176,22 @@ def train():
         val_acc = 100 * correct / (total + 1e-8)
         
         print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Validation Loss: {avg_val_loss:.4f} | Acc: {val_acc:.2f}%")
-        
-        # Save Best
-        if val_acc >= best_val_acc and val_acc > 50:
+
+        # Save best model
+        if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), "models/audio_model.pth")
-            print(f">> Saved New Best Model ({val_acc:.2f}%)")
+            torch.save(model.state_dict(), "models/audio_expert.pth")
+            print("Model saved.")
+        
+        else: 
+            print("No improvement this epoch.")
+            trigger_times += 1
+            
+            if trigger_times >= patience:
+                print("Early Stopping!")
+                break
+            
+    print("Training Complete.")
 
 if __name__ == "__main__":
     train()

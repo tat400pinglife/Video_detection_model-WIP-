@@ -1,164 +1,132 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-import cv2
-import random
+from torch.utils.data import Dataset, DataLoader, random_split
 from pathlib import Path
-
-# Import your architecture
+import random
+import numpy as np
 from model_architecture import ArtifactSegmentor
 
-# --- 1. THE GLITCH GENERATOR (Unchanged, this logic is good) ---
-def create_glitch_batch(real_imgs_batch):
-    """
-    Takes a batch of REAL images (B, H, W, 3) and creates FAKES + MASKS.
-    """
-    # Ensure inputs are 0.0 - 1.0
-    if real_imgs_batch.max() > 1.0:
-        real_imgs_batch = real_imgs_batch / 255.0
-        
-    batch_size, h, w, c = real_imgs_batch.shape
-    inputs, masks = [], []
-    
-    for i in range(batch_size):
-        img = real_imgs_batch[i] # (H, W, 3) Float
-        
-        # A. Create Mask
-        mask = np.zeros((h, w), dtype=np.float32)
-        cx, cy = random.randint(50, 200), random.randint(50, 200)
-        
-        if random.random() > 0.5:
-            radius = random.randint(30, 80)
-            cv2.circle(mask, (cx, cy), radius, 1.0, -1)
-        else:
-            size = random.randint(40, 100)
-            x1, y1 = max(0, cx - size//2), max(0, cy - size//2)
-            cv2.rectangle(mask, (x1, y1), (x1+size, y1+size), 1.0, -1)
-            
-        mask_blur = cv2.GaussianBlur(mask, (15, 15), 0)[:,:,None]
-        
-        # B. Create Artifact
-        scale = random.uniform(0.1, 0.3)
-        small = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
-        artifact = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
-        
-        c_idx = random.randint(0, 2)
-        artifact[:, :, c_idx] *= random.uniform(0.8, 1.2)
-        artifact = np.clip(artifact, 0, 1)
+# CONFIG
+DATA_PATH = "./data/processed_data"
+SAVE_PATH = "./models/artifact_model.pth"
+BATCH_SIZE = 16
+LR = 0.0001
+EPOCHS = 30
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # C. Blend
-        blended = img * (1 - mask_blur) + artifact * mask_blur
-        
-        # Add Noise
-        noise = np.random.normal(0, 0.005, blended.shape).astype(np.float32)
-        blended = np.clip(blended + noise, 0, 1)
-        
-        inputs.append(blended)
-        masks.append(mask)
-
-    t_inputs = torch.tensor(np.array(inputs)).permute(0,3,1,2).float()
-    t_masks = torch.tensor(np.array(masks)).unsqueeze(1).float()
-    
-    return t_inputs, t_masks
-
-# --- 2. FIXED DATASET CLASS ---
-class RealTensorDataset(Dataset):
+class SupervisedArtifactDataset(Dataset):
     def __init__(self, root_dir):
-        # Look for files in processed_data, specifically REAL videos
         self.files = list(Path(root_dir).rglob("*.pt"))
+        self.clean_files = []
         
-        if len(self.files) == 0:
-            print(f"ERROR: No .pt files found in {root_dir}")
-            # Fallback check to prevent crash if user points to parent folder
-            self.files = list(Path(root_dir).rglob("real/*.pt"))
-            
-        print(f">> Found {len(self.files)} real video tensors.")
+        # Filter and Assign Labels
+        print("Indexing Dataset...")
+        for f in self.files:
+            # We assume folder structure .../real/video.pt or .../fake/video.pt
+            if "fake" in str(f).lower():
+                self.clean_files.append((f, 1.0)) # Label 1 = Fake
+            elif "real" in str(f).lower():
+                self.clean_files.append((f, 0.0)) # Label 0 = Real
         
-    def __len__(self): return len(self.files)
+        random.shuffle(self.clean_files)
+        print(f"Found {len(self.clean_files)} labeled samples.")
+
+    def __len__(self): return len(self.clean_files)
 
     def __getitem__(self, idx):
+        path, label = self.clean_files[idx]
         try:
-            data = torch.load(self.files[idx], weights_only=False)
+            data = torch.load(path, weights_only=False)
             
-            # FIX 1: Use the correct key 'rgb_batch'
+            # Try to get batch or single frame
             if 'rgb_batch' in data:
-                frames_tensor = data['rgb_batch'] # Shape [32, 3, 256, 256]
+                frames = data['rgb_batch']
+                # Pick random frame to train on
+                ridx = random.randint(0, frames.shape[0]-1)
+                img = frames[ridx]
             else:
-                # Fallback if using older data processing
-                frames_tensor = data['rgb_mid'].unsqueeze(0) 
+                img = data['rgb_mid']
+            
+            # Target: If Real (0.0), Mask is all Zeros.
+            #         If Fake (1.0), Mask is all Ones (Simple Supervised Baseline)
+            #         (Ideally we would have ground-truth masks, but global labels work for classification)
+            target = torch.full((1, 256, 256), label, dtype=torch.float32)
+            
+            return img.float(), target
+            
+        except:
+            return torch.zeros(3,256,256), torch.zeros(1,256,256)
 
-            # FIX 2: Ensure we have frames to pick from
-            num_frames = frames_tensor.shape[0]
-            random_idx = random.randint(0, num_frames - 1)
-            frame = frames_tensor[random_idx] # (3, 256, 256)
-            
-            # Permute for OpenCV: (3, H, W) -> (H, W, 3)
-            frame = frame.permute(1, 2, 0)
-            
-            return frame 
-            
-        except Exception as e:
-            # Return black frame on error
-            return torch.zeros((256, 256, 3), dtype=torch.float32)
+def train_supervised():
+    dataset = SupervisedArtifactDataset(DATA_PATH)
+    
+    # Split
+    train_size = int(0.85 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_ds, val_ds = random_split(dataset, [train_size, val_size])
+    
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, drop_last=True)
+    val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    
+    model = ArtifactSegmentor().to(DEVICE)
+    optimizer = optim.Adam(model.parameters(), lr=LR)
+    criterion = nn.BCEWithLogitsLoss() # Pixel-wise loss
+    
+    best_val_loss = 100.0
+    print(f"--- Starting Supervised Training on {len(train_ds)} samples ---")
+    patience = 3
+    trigger_times = 0
 
-# --- 3. TRAINING LOOP ---
-def train_artifact_expert():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Found device: {device}")
-    
-    # Point this to the folder containing REAL videos only
-    # The glitch function creates the fakes for us
-    dataset = RealTensorDataset("./data/processed_data") 
-    
-    # Drop last to prevent batch size errors
-    loader = DataLoader(dataset, batch_size=8, shuffle=True, drop_last=True)
-    
-    model = ArtifactSegmentor().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
-    criterion = nn.BCEWithLogitsLoss()
-    
-    print("Starting Self-Supervised Artifact Training...")
-    
-    epochs = 30
-    for epoch in range(1, epochs+1):
-        total_loss = 0
+
+    for epoch in range(EPOCHS):
         model.train()
+        train_loss = 0
         
-        count = 0
-        for real_batch in loader:
-            # Skip empty batches
-            if real_batch.sum() == 0: continue
-
-            # A. Create Fakes (Self-Supervision)
-            inputs, masks = create_glitch_batch(real_batch.numpy())
-            
-            inputs = inputs.to(device)
-            masks = masks.to(device)
+        for x, y in train_loader:
+            x, y = x.to(DEVICE), y.to(DEVICE)
+            if x.sum() == 0: continue
             
             optimizer.zero_grad()
-            
-            # B. Train
-            logits = model(inputs) 
-            loss = criterion(logits, masks)
-            
+            pred = model(x)
+            loss = criterion(pred, y)
             loss.backward()
             optimizer.step()
+            train_loss += loss.item()
             
-            total_loss += loss.item()
-            count += 1
-            
-        if count == 0: continue
-        avg_loss = total_loss / count
-        print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+        avg_train = train_loss / len(train_loader)
         
-        # Save periodically
-        if epoch % 5 == 0:
-             torch.save(model.state_dict(), "./models/artifact_model.pth")
+        # Validate
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for x, y in val_loader:
+                x, y = x.to(DEVICE), y.to(DEVICE)
+                if x.sum() == 0: continue
+                pred = model(x)
+                loss = criterion(pred, y)
+                val_loss += loss.item()
+                
+        avg_val = val_loss / len(val_loader)
+        print(f"Epoch {epoch+1} | Train: {avg_train:.4f} | Val: {avg_val:.4f}")
+        
+        if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), SAVE_PATH) 
+                print("Model saved.")
+                trigger_times = 0            
+            
+        else:
+            trigger_times += 1
+            print(f"No improvement for {trigger_times} epochs.")
+            
+            # 3. Stop if we haven't improved in a while
+            if trigger_times >= patience:
+                print("Early Stopping!")
+                break
 
-    torch.save(model.state_dict(), "./models/artifact_model.pth")
-    print("\n>> Training Complete. Saved 'artifact_model.pth'")
+    print("Done.")
+
 
 if __name__ == "__main__":
-    train_artifact_expert()
+    train_supervised()

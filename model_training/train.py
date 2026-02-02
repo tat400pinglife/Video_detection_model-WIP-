@@ -4,13 +4,13 @@ import os
 import time
 
 # flahs for each model
-# TRAIN_TEMPORAL  = False   # Motion / Ghosting
+TRAIN_TEMPORAL  = False   # Motion / Ghosting
 # TRAIN_ARTIFACT  = False   # Visual Glitches (RGB)
 # TRAIN_NOISE     = False   # Camera Sensor Noise (PRNU)
 # TRAIN_FREQ      = False   # Frequency Analysis (FFT)
 # TRAIN_AUDIO     = False   # Audio Spectrum
 
-TRAIN_TEMPORAL  = True   # Motion / Ghosting
+#TRAIN_TEMPORAL  = True   # Motion / Ghosting
 TRAIN_ARTIFACT  = True   # Visual Glitches (RGB)
 TRAIN_NOISE     = True   # Camera Sensor Noise (PRNU)
 TRAIN_FREQ      = True   # Frequency Analysis (FFT)

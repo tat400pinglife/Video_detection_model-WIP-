@@ -115,29 +115,49 @@ def train():
             optimizer.step()
             train_loss += loss.item()
             
-        # Validation
+# --- VALIDATION STEP ---
         model.eval()
         correct = 0
         total = 0
+        val_loss = 0
+        
+        print("\n[DEBUG] Validation Sample Predictions:")
+        
         with torch.no_grad():
-            for X, y in val_loader:
-                X, y = X.to(DEVICE), y.to(DEVICE)
-                pred = torch.sigmoid(model(X))
-                predicted_class = (pred > 0.5).float()
-                correct += (predicted_class == y).sum().item()
-                total += y.size(0)
+            batch_count = 0
+            for batch in val_loader:
+                # FIX: Unpack only 2 items (Input, Label)
+                # The validation loader for Temporal only yields (diff_seq, label)
+                diff_seq, labels = [x.to(DEVICE) for x in batch]
                 
-        acc = 100 * correct / (total + 1e-8)
-        avg_loss = train_loss / len(train_loader)
-        
-        print(f"Epoch {epoch+1}/{EPOCHS} | Loss: {avg_loss:.4f} | Val Acc: {acc:.2f}%")
-        
-        if acc >= best_acc:
-            best_acc = acc
-            os.makedirs("models", exist_ok=True)
-            torch.save(model.state_dict(), SAVE_PATH)
-            print(f"--> Saved Best Model")
+                # Forward Pass (Only feed diff_seq)
+                output = model(diff_seq) 
+                
+                # Calculate Loss
+                loss = criterion(output, labels)
+                val_loss += loss.item()
+                
+                # Get Predictions
+                preds = torch.sigmoid(output)
 
+                # Accuracy Calc
+                predicted_labels = (preds > 0.5).float()
+                correct += (predicted_labels == labels).sum().item()
+                total += labels.size(0)
+                batch_count += 1
+                
+        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
+        avg_val_loss = val_loss / len(val_loader)
+        acc = 100 * correct / (total + 1e-8)
+        
+        print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Acc: {acc:.2f}%")
+        # stop if loss is less 0.2
+        if avg_train_loss < 0.2:
+            torch.save(model.state_dict(), SAVE_PATH)
+            print("Model saved.")
+            break
+
+    torch.save(model.state_dict(), SAVE_PATH)
     print("Done.")
 
 if __name__ == "__main__":

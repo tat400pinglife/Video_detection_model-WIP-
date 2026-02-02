@@ -104,7 +104,7 @@ ERRORS I GOT
     - if you dont want to use conda im pretty sure running pip install -r requirements.txt will get almost all libraries
 
 3. RUN THE MODEL
-    - run "run.py", you can modify video in code right near the bottom.
+    - run "run2.py", you can modify video in code right near the bottom.
     - make sure all weights are present in the models folder.
     - if not there is a script called train, raise flags that are needed
 
