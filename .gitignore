@@ -2,3 +2,4 @@
 /data/processed_data
 /uploads
 /resources
+*.pth
