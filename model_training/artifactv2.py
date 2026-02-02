@@ -1,134 +1,242 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split, WeightedRandomSampler
-from pathlib import Path
-import random
+from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
+import cv2
+import random
+from pathlib import Path
+from tqdm import tqdm
 import os
+import time
 
+# Import your architecture
 from model_architecture import ArtifactSegmentor
 
-# CONFIG
-DATA_FOLDER = "./data/processed_data" 
-SAVE_PATH = "models/unet_artifact_hunter.pth"
-BATCH_SIZE = 16
-LR = 0.001 # Boosted from 0.0001
-EPOCHS = 15
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# --- CONFIGURATION
+DATA_PATH = "./data/processed_data" 
+SAVE_DIR = "./models/checkpoints"   
+BATCH_SIZE = 32                     
+LR = 0.0001                           
+EPOCHS = 50
+NUM_WORKERS = 4                   
+PIN_MEMORY = True                
 
-class ArtifactDataset(Dataset):
-    def __init__(self, folder_path):
-        self.files = list(Path(folder_path).rglob("*.pt"))
-        self.labels = []
+# 1. GLITCH GENERATOR 
+def create_glitch_batch_fast(real_imgs_numpy):
+    """
+    Optimized glitch generation. Runs inside DataLoader workers.
+    Input: Numpy batch (B, H, W, 3)
+    Returns: Tensor Inputs (B, 3, H, W), Tensor Masks (B, 1, H, W)
+    """
+    # Normalize if needed
+    if real_imgs_numpy.max() > 1.0:
+        real_imgs_numpy = real_imgs_numpy.astype(np.float32) / 255.0
         
-        # Pre-scan to get labels for balancing
-        print(f"Scanning {len(self.files)} files for artifacts...")
-        valid_files = []
-        for f in self.files:
-            try:
-                # Lightweight check: Read label without loading full tensor if possible
-                # For now, we load it. It's slower but safer.
-                data = torch.load(f, weights_only=False)
-                lbl = int(data['label'])
-                
-                # Check if RGB data exists
-                if data['rgb_batch'].nelement() > 0:
-                    valid_files.append(f)
-                    self.labels.append(lbl)
-            except:
-                continue
+    batch_size, h, w, c = real_imgs_numpy.shape
+    inputs = np.zeros_like(real_imgs_numpy)
+    masks = np.zeros((batch_size, h, w), dtype=np.float32)
+    
+    for i in range(batch_size):
+        img = real_imgs_numpy[i]
         
-        self.files = valid_files
-        print(f"Training on {len(self.files)} valid samples.")
+        # Fast Randoms
+        cx, cy = np.random.randint(50, 200, 2)
+        
+        # A. Create Mask (Vectorized where possible or simple CV2)
+        mask = np.zeros((h, w), dtype=np.float32)
+        if np.random.rand() > 0.5:
+            radius = np.random.randint(30, 80)
+            cv2.circle(mask, (cx, cy), radius, 1.0, -1)
+        else:
+            size = np.random.randint(40, 100)
+            x1, y1 = max(0, cx - size//2), max(0, cy - size//2)
+            cv2.rectangle(mask, (x1, y1), (x1+size, y1+size), 1.0, -1)
+            
+        # Blur mask to avoid sharp edges being the only cue
+        mask_blur = cv2.GaussianBlur(mask, (15, 15), 0)[:,:,None]
+        
+        # B. Create Artifact (Pixelation)
+        scale = np.random.uniform(0.1, 0.4)
+        small = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+        artifact = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+        
+        # Color Shift
+        c_idx = np.random.randint(0, 3)
+        artifact[:, :, c_idx] *= np.random.uniform(0.7, 1.3)
+        artifact = np.clip(artifact, 0, 1)
 
-    def __len__(self): return len(self.files)
+        # C. Blend
+        blended = img * (1 - mask_blur) + artifact * mask_blur
+        
+        inputs[i] = blended
+        masks[i]  = mask
+
+    # Convert to Tensor
+    t_inputs = torch.from_numpy(inputs).permute(0,3,1,2).float()
+    t_masks  = torch.from_numpy(masks).unsqueeze(1).float()
+    
+    return t_inputs, t_masks
+
+# 2. ROBUST DATASET
+class BigDataTensorDataset(Dataset):
+    def __init__(self, root_dir):
+        self.files = list(Path(root_dir).rglob("*.pt"))
+        if len(self.files) == 0:
+            print(f"ERROR: No .pt files found in {root_dir}. Searching recursive...")
+            self.files = list(Path(root_dir).rglob("real/*.pt"))
+            
+        print(f">> Indexing complete. Found {len(self.files)} files.")
+
+    def __len__(self):
+        return len(self.files)
 
     def __getitem__(self, idx):
-        try:
-            data = torch.load(self.files[idx], weights_only=False)
-            rgb_batch = data['rgb_batch'] # [Frames, 3, 256, 256]
-            label = torch.tensor([data['label']], dtype=torch.float32)
+        # Retry logic for corrupt files
+        attempts = 0
+        while attempts < 3:
+            try:
+                path = self.files[idx]
+                data = torch.load(path, weights_only=False)
+                
+                # Check for 'rgb_batch' (Sequence) or fallback to 'rgb_mid'
+                if 'rgb_batch' in data:
+                    frames = data['rgb_batch']
+                    # Pick random frame index
+                    ridx = np.random.randint(0, frames.shape[0])
+                    frame = frames[ridx] # [3, 256, 256]
+                elif 'rgb_mid' in data:
+                    frame = data['rgb_mid']
+                else:
+                    raise ValueError("No RGB data in file")
 
-            # Pick 1 Random Frame
-            if rgb_batch.size(0) > 0:
-                frame_idx = random.randint(0, rgb_batch.size(0)-1)
-                img = rgb_batch[frame_idx]
-            else:
-                img = torch.zeros(3, 256, 256)
-            
-            return img.float(), label
-        except:
-            return torch.zeros(3, 256, 256), torch.tensor([0.0])
+                # Permute to HWC for OpenCV processing in the collate_fn or training loop
+                # frame is [3, H, W] -> [H, W, 3]
+                return frame.permute(1, 2, 0).numpy()
 
-def train():
-    print(f"--- Training ARTIFACT Expert (Mean Pooling) on {DEVICE} ---")
+            except Exception as e:
+                # If file is bad, pick a random OTHER file
+                # print(f"Warning: File {idx} corrupt. Retrying...")
+                idx = np.random.randint(0, len(self.files))
+                attempts += 1
+        
+        # If all fails, return zeros
+        return np.zeros((256, 256, 3), dtype=np.float32)
+
+# 3. CUSTOM COLLATE FUNCTION
+def glitch_collate_fn(batch):
+    # Filter out bad samples (zeros)
+    clean_batch = [x for x in batch if x.max() > 0]
+    if len(clean_batch) == 0:
+        return None, None
+        
+    # Stack into numpy array (B, H, W, 3)
+    batch_np = np.stack(clean_batch)
     
-    dataset = ArtifactDataset(DATA_FOLDER)
-    if len(dataset) == 0: return
-
-    # keep data balanced
-    class_counts = np.bincount(dataset.labels)
-    print(f"Data Balance: {class_counts[0]} Real vs {class_counts[1]} Fake")
+    # Generate Glitches (CPU Parallelized)
+    inputs, targets = create_glitch_batch_fast(batch_np)
     
-    # Stratified Split (Keep balance in train/val)
-    # We'll just use random split but check it
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_set, val_set = random_split(dataset, [train_size, val_size])
+    return inputs, targets
 
-    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False)
+# 4. MAIN TRAINING LOOP 
+def train_scale():
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"--- Starting Large Scale Training on {device} ---")
+    
+    # Data Setup
+    full_ds = BigDataTensorDataset(DATA_PATH)
+    
+    # Split 90/10
+    train_len = int(0.9 * len(full_ds))
+    val_len = len(full_ds) - train_len
+    train_ds, val_ds = random_split(full_ds, [train_len, val_len])
+    
+    # Loaders with Multiprocessing
+    # collate_fn does the heavy lifting (glitch generation) on CPU cores
+    train_loader = DataLoader(
+        train_ds, 
+        batch_size=BATCH_SIZE, 
+        shuffle=True, 
+        num_workers=NUM_WORKERS, 
+        pin_memory=PIN_MEMORY,
+        collate_fn=glitch_collate_fn,
+        drop_last=True
+    )
+    
+    val_loader = DataLoader(
+        val_ds, 
+        batch_size=BATCH_SIZE, 
+        shuffle=False, 
+        num_workers=NUM_WORKERS, 
+        pin_memory=PIN_MEMORY,
+        collate_fn=glitch_collate_fn,
+        drop_last=True
+    )
 
-    model = ArtifactSegmentor().to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    # Model Setup
+    model = ArtifactSegmentor().to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    
+    # Reduce LR if validation loss stops improving for 3 epochs
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
     criterion = nn.BCEWithLogitsLoss()
-
-    best_acc = 0.0
     
-    for epoch in range(EPOCHS):
+    best_val_loss = float('inf')
+    
+    for epoch in range(1, EPOCHS + 1):
+        # TRAIN
         model.train()
         train_loss = 0
+        loop = tqdm(train_loader, desc=f"Ep {epoch}/{EPOCHS} [Train]")
         
-        for X, y in train_loader:
-            X, y = X.to(DEVICE), y.to(DEVICE)
+        for inputs, masks in loop:
+            if inputs is None: continue # Skip bad batches
+            
+            inputs, masks = inputs.to(device, non_blocking=True), masks.to(device, non_blocking=True)
             
             optimizer.zero_grad()
-            mask_logits = model(X) # [B, 1, 256, 256]
-            
-            # Max pooling on noise = Always Fake.
-            # Mean pooling on noise = ~0 (Neutral).
-            video_score_logits = mask_logits.mean(dim=(1, 2, 3)).unsqueeze(1)
-            
-            loss = criterion(video_score_logits, y)
+            logits = model(inputs)
+            loss = criterion(logits, masks)
             loss.backward()
             optimizer.step()
-            train_loss += loss.item()
             
-        # Validation
+            train_loss += loss.item()
+            loop.set_postfix(loss=loss.item())
+            
+        avg_train_loss = train_loss / len(train_loader)
+        
+        # VALIDATE
         model.eval()
-        correct = 0; total = 0
+        val_loss = 0
         with torch.no_grad():
-            for X, y in val_loader:
-                X, y = X.to(DEVICE), y.to(DEVICE)
-                mask_logits = model(X)
+            for inputs, masks in val_loader:
+                if inputs is None: continue
+                inputs, masks = inputs.to(device, non_blocking=True), masks.to(device, non_blocking=True)
+                logits = model(inputs)
+                loss = criterion(logits, masks)
+                val_loss += loss.item()
                 
-                # Use same pooling for validation
-                score = torch.sigmoid(mask_logits.mean(dim=(1, 2, 3)).unsqueeze(1))
-                
-                pred = (score > 0.5).float()
-                correct += (pred == y).sum().item()
-                total += y.size(0)
+        avg_val_loss = val_loss / len(val_loader)
         
-        acc = 100 * correct / (total + 1e-8)
-        print(f"Epoch {epoch+1} | Loss: {train_loss/len(train_loader):.4f} | Val Acc: {acc:.2f}%")
+        # Logging
+        print(f"Results: Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
         
-        if acc >= best_acc:
-            best_acc = acc
-            os.makedirs("models", exist_ok=True)
-            torch.save(model.state_dict(), SAVE_PATH)
+        # Step Scheduler
+        scheduler.step(avg_val_loss)
+        
+        # Save Best
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), f"{SAVE_DIR}/artifact_best.pth")
+            print(">>> New Best Model Saved!")
+            
+        # Save Latest (Checkpoint)
+        torch.save(model.state_dict(), f"{SAVE_DIR}/artifact_latest.pth")
 
-    print(f"Done. Saved to {SAVE_PATH}")
+    print("Done.")
 
 if __name__ == "__main__":
-    train()
+    # Windows needs this for multiprocessing
+    torch.multiprocessing.freeze_support()
+    train_scale()

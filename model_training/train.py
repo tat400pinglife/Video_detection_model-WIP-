@@ -4,26 +4,32 @@ import os
 import time
 
 # flahs for each model
-TRAIN_TEMPORAL  = False   # Motion / Ghosting
-TRAIN_ARTIFACT  = False   # Visual Glitches (RGB)
-TRAIN_NOISE     = False   # Camera Sensor Noise (PRNU)
-TRAIN_FREQ      = False   # Frequency Analysis (FFT)
-TRAIN_AUDIO     = False   # Audio Spectrum
+# TRAIN_TEMPORAL  = False   # Motion / Ghosting
+# TRAIN_ARTIFACT  = False   # Visual Glitches (RGB)
+# TRAIN_NOISE     = False   # Camera Sensor Noise (PRNU)
+# TRAIN_FREQ      = False   # Frequency Analysis (FFT)
+# TRAIN_AUDIO     = False   # Audio Spectrum
 
+TRAIN_TEMPORAL  = True   # Motion / Ghosting
+TRAIN_ARTIFACT  = True   # Visual Glitches (RGB)
+TRAIN_NOISE     = True   # Camera Sensor Noise (PRNU)
+TRAIN_FREQ      = True   # Frequency Analysis (FFT)
+TRAIN_AUDIO     = True   # Audio Spectrum
 # this will always be true
 TRAIN_MOE_ROUTER = True
 
 
 # Script mapping
 SCRIPTS = {
-    "temporal": "temporal.py",
-    "artifact": "AreaDetectionModel.py", 
-    "noise":    "prnu.py",
-    "freq":     "frequency.py",
-    "audio":    "audio_.py"   
+    #"temporal": "temporal.py",
+    "temporal": "model_training/temporalVlstm.py",
+    "artifact": "model_training/AreaDetectionModel.py", 
+    "noise":    "model_training/prnu.py",
+    "freq":     "model_training/frequency.py",
+    "audio":    "model_training/audio.py"   
 }
 
-MOE_SCRIPT = "moe.py"         
+MOE_SCRIPT = "model_training/moe2.py"         
 
 def run_step(script_name, step_name):
 
