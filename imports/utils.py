@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import torch
 import librosa
+import random
 from pathlib import Path
 from tqdm import tqdm
 import warnings
@@ -36,6 +37,7 @@ def process_dataset(input_dir, output_dir, label, max_videos=None):
             
             torch.save({
                 'rgb_mid':  feats['rgb_mid'].squeeze(0).clone(),   # [3, 256, 256]
+                'rgb_batch': feats['rgb_batch'].clone(),           # [32, 3, 256, 256]
                 'diff':     feats['diff'].squeeze(0).clone(),      # [1, 256, 256] 
                 'diff_seq': feats['diff_seq'].squeeze(0).clone(),  # [31, 1, 256, 256] 
                 'prnu':     feats['prnu'].squeeze(0).clone(),      # [1, 256, 256]
@@ -54,7 +56,6 @@ def process_dataset(input_dir, output_dir, label, max_videos=None):
 
 
 # 2. FRAME EXTRACTION
-
 def get_frames(video_path, size=256, num_frames=32):
     path_obj = Path(video_path).resolve()
     if not path_obj.exists(): return None
@@ -64,37 +65,83 @@ def get_frames(video_path, size=256, num_frames=32):
     
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    if total_frames <= 1: 
-        cap.release()
-        return None
-
-    indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
-    frames = []
-    idx = 0
+    # SAFETY: If video is too short, we just take what we have
+    if total_frames <= num_frames:
+        start_idx = 0
+    else:
+        max_start = total_frames - num_frames
+        start_idx = random.randint(0, max_start)
+        
+    # Jump to the start point
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_idx)
     
-    while True:
+    frames = []
+    for _ in range(num_frames):
         ret, frame = cap.read()
         if not ret: break
         
-        if idx in indices:
-            frame = cv2.resize(frame, (size, size))
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(frame)
-            if len(frames) >= num_frames: break
-        idx += 1
+        frame = cv2.resize(frame, (size, size))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(frame)
         
     cap.release()
     frames = np.array(frames)
     
-    if len(frames) == 0: return None
-    if len(frames) < num_frames:
+    # Padding (if video was extremely short)
+    if len(frames) > 0 and len(frames) < num_frames:
         pad_len = num_frames - len(frames)
         last_frame = frames[-1:]
         padding = np.repeat(last_frame, pad_len, axis=0)
         frames = np.concatenate([frames, padding], axis=0)
         
+    if len(frames) == 0: return None
+        
     return frames
 
+def get_multi_clips(video_path, size=256, clip_len=32, num_clips=3):
+    path_obj = Path(video_path).resolve()
+    if not path_obj.exists(): return None
+
+    cap = cv2.VideoCapture(str(path_obj))
+    if not cap.isOpened(): return None
+    
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # 1. Define Start Points (Beginning, Middle, End)
+    if total_frames <= clip_len:
+        start_indices = [0] # Video is too short, just take what we have
+    else:
+        # Create 'num_clips' starting points evenly spaced
+        # e.g., if video is 100 frames, clip_len 32, num_clips 3:
+        # max_start = 100 - 32 = 68.
+        # starts = [0, 34, 68]
+        max_start = total_frames - clip_len
+        start_indices = np.linspace(0, max_start, num_clips, dtype=int)
+
+    all_clips = []
+    
+    for start_idx in start_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_idx)
+        frames = []
+        for _ in range(clip_len):
+            ret, frame = cap.read()
+            if not ret: break
+            
+            frame = cv2.resize(frame, (size, size))
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame)
+            
+        # Pad if short (edge case)
+        frames = np.array(frames)
+        if len(frames) < clip_len and len(frames) > 0:
+            pad = np.repeat(frames[-1:], clip_len - len(frames), axis=0)
+            frames = np.concatenate([frames, pad], axis=0)
+            
+        if len(frames) == clip_len:
+            all_clips.append(frames)
+            
+    cap.release()
+    return all_clips if len(all_clips) > 0 else None
 
 # 3. FEATURE COMPUTATION
 
