@@ -20,7 +20,7 @@ class DeepfakeCaseFile:
         
         # Load System
         self.system = MoE_Investigator(
-            temp_path="./models/temporal_lstm.pth",  # Updated path
+            temp_path="./models/temporal_lstm.pth", 
             art_path="./models/artifact_model.pth", 
             noise_path="./models/noise_model.pth",
             freq_path="./models/frequency_model.pth", 
