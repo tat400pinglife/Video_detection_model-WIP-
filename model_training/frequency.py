@@ -20,11 +20,54 @@ NUM_WORKERS = 4
 
 warnings.filterwarnings("ignore")
 
+# class RobustFrequencyDataset(Dataset):
+#     def __init__(self, folder_path):
+#         # Scan for all .pt files
+#         self.files = list(Path(folder_path).rglob("*.pt"))
+#         print(f"Index complete. Found {len(self.files)} samples.")
+#         self.labels = []
+#         valid_files = []
+#         for f in self.files:
+#             if "real" in str(f.parent).lower():
+#                 self.labels.append(0)
+#                 valid_files.append(f)
+#             elif "fake" in str(f.parent).lower():
+#                 self.labels.append(1)
+#                 valid_files.append(f)
+#             else:
+#                 pass 
+        
+#         self.files = valid_files
+
+#     def __len__(self):
+#         return len(self.files)
+
+#     def __getitem__(self, idx):
+#         try:
+#             path = self.files[idx]
+#             data = torch.load(path, weights_only=False)
+#             # Extract FFT Tensor
+#             if 'fft' not in data:
+#                 return None
+                
+#             x = data['fft'].float() # [1, 256, 256]
+            
+#             # Ensure correct shape
+#             if x.ndim == 2: x = x.unsqueeze(0)
+#             if x.ndim == 4: x = x.squeeze(0)
+            
+#             y = torch.tensor([data['label']], dtype=torch.float32)
+#             return x, y
+#         except Exception:
+#             # Return None so collate_fn can drop it
+#             return None
+
 class RobustFrequencyDataset(Dataset):
     def __init__(self, folder_path):
-        # Scan for all .pt files
         self.files = list(Path(folder_path).rglob("*.pt"))
-        print(f"Index complete. Found {len(self.files)} samples.")
+        print(f"Freq Dataset: Found {len(self.files)} samples.")
+        
+                # Fast Label Scan for Class Balancing
         self.labels = []
         valid_files = []
         for f in self.files:
@@ -35,31 +78,27 @@ class RobustFrequencyDataset(Dataset):
                 self.labels.append(1)
                 valid_files.append(f)
             else:
-                pass 
-        
-        self.files = valid_files
-
-    def __len__(self):
-        return len(self.files)
+                pass # Skip unknown folders
+    def __len__(self): return len(self.files)
 
     def __getitem__(self, idx):
         try:
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
-            # Extract FFT Tensor
-            if 'fft' not in data:
-                return None
+            
+            # 1. Check for key (Safeguard)
+            if 'fft' not in data: return None
                 
+            # 2. DECOMPRESS: Float16 -> Float32
             x = data['fft'].float() # [1, 256, 256]
             
-            # Ensure correct shape
+            # 3. Shape Safety
             if x.ndim == 2: x = x.unsqueeze(0)
-            if x.ndim == 4: x = x.squeeze(0)
             
             y = torch.tensor([data['label']], dtype=torch.float32)
             return x, y
+            
         except Exception:
-            # Return None so collate_fn can drop it
             return None
 
 def drop_corrupt_collate(batch):

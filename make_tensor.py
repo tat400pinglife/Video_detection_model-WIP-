@@ -1,5 +1,5 @@
 # create_tensors.py
-from imports.utils import process_dataset
+from imports.space import process_dataset
 
 if __name__ == "__main__":
     REAL_VIDEO_DIR = "./data/videos/real"
