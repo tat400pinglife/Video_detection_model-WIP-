@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deepfake Investigator | MoE System</title>
+    <style>
+        :root {
+            --bg: #050505;
+            --surface: #111;
+            --primary: #00f3ff;
+            --danger: #ff0055;
+            --success: #00ff88;
+            --text: #eee;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+        }
+
+        h1 { font-weight: 300; letter-spacing: 2px; text-align: center; margin-bottom: 40px; }
+        h1 b { color: var(--primary); font-weight: 700; }
+
+        /* UPLOAD ZONE */
+        .upload-zone {
+            background: var(--surface);
+            border: 2px dashed #333;
+            border-radius: 16px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--primary);
+            background: #1a1a1a;
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.1);
+        }
+
+        .icon { font-size: 48px; margin-bottom: 15px; display: block; }
+        .hint { color: #666; font-size: 0.9rem; margin-top: 10px; }
+        #fileInput { display: none; }
+
+        /* STATUS & PROGRESS */
+        #status-box {
+            margin-top: 30px;
+            display: none; /* Hidden by default */
+        }
+
+        .status-text { font-size: 1.1rem; margin-bottom: 10px; text-align: center; }
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #222;
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .progress-fill.infinite {
+            width: 30%;
+            position: absolute;
+            animation: slide 1.5s infinite ease-in-out;
+        }
+
+        @keyframes slide {
+            0% { left: -30%; }
+            100% { left: 100%; }
+        }
+
+        /* RESULTS CARD */
+        #result-card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 30px;
+            margin-top: 30px;
+            display: none;
+            border: 1px solid #333;
+        }
+
+        .verdict {
+            font-size: 3rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        .confidence { text-align: center; color: #888; margin-bottom: 30px; }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        .metric-bar-bg { flex-grow: 1; height: 8px; background: #222; margin: 6px 15px; border-radius: 4px; }
+        .metric-bar-fill { height: 100%; border-radius: 4px; background: #555; width: 0%; transition: width 1s ease-out; }
+
+        .report-link {
+            display: block;
+            margin-top: 20px;
+            text-align: center;
+            color: var(--primary);
+            text-decoration: none;
+            border: 1px solid var(--primary);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .report-link:hover { background: rgba(0, 243, 255, 0.1); }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>DEEPFAKE <b>DETECTOR</b></h1>
+
+    <div class="upload-zone" id="dropZone">
+        <span class="icon">📂</span>
+        <div id="uploadText">Drag & Drop Video or Click to Browse</div>
+        <div class="hint">Supports MP4, AVI, MOV</div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*">
+
+    <div id="status-box">
+        <div class="status-text" id="statusText">Uploading...</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div id="result-card">
+        <div class="verdict" id="verdictLabel">FAKE</div>
+        <div class="confidence" id="confidenceLabel">98.4% Confidence</div>
+        
+        <div id="breakdownContainer">
+            </div>
+
+        <a href="#" target="_blank" id="reportLink" class="report-link">📄 View Full Forensic Report</a>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const statusBox = document.getElementById('status-box');
+    const statusText = document.getElementById('statusText');
+    const progressFill = document.getElementById('progressFill');
+    const resultCard = document.getElementById('result-card');
+    const breakdownContainer = document.getElementById('breakdownContainer');
+
+    // -- Drag & Drop Logic --
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleUpload(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => handleUpload(e.target.files[0]));
+
+    async function handleUpload(file) {
+        if (!file) return;
+
+        // Reset UI
+        resultCard.style.display = 'none';
+        statusBox.style.display = 'block';
+        statusText.innerText = "Uploading to Investigator...";
+        progressFill.classList.remove('infinite');
+        progressFill.style.width = '0%';
+        dropZone.style.pointerEvents = 'none'; // Disable double clicks
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            // Upload
+            const upRes = await fetch('/upload', { method: 'POST', body: formData });
+            
+            if (!upRes.ok) throw new Error("Upload Failed");
+            
+            const data = await upRes.json();
+            progressFill.style.width = '100%';
+            
+            // Start Polling
+            setTimeout(() => {
+                statusText.innerText = "Analyzing Frames & Audio...";
+                progressFill.classList.add('infinite'); // Start animation
+                pollResult(data.task_id);
+            }, 500);
+
+        } catch (e) {
+            statusText.innerText = "Error: " + e.message;
+            dropZone.style.pointerEvents = 'all';
+        }
+    }
+
+    async function pollResult(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/result/${taskId}`);
+                const data = await res.json();
+
+                if (data.status === 'Completed') {
+                    clearInterval(interval);
+                    showResult(data);
+                } else if (data.status === 'Failed') {
+                    clearInterval(interval);
+                    statusText.innerText = "Analysis Failed: " + (data.error || "Unknown");
+                    progressFill.classList.remove('infinite');
+                    progressFill.style.background = '#ff0055';
+                    dropZone.style.pointerEvents = 'all';
+                }
+            } catch (e) {
+                console.error("Polling error", e);
+            }
+        }, 2000); // Check every 2s
+    }
+
+    function showResult(data) {
+        statusBox.style.display = 'none';
+        resultCard.style.display = 'block';
+        dropZone.style.pointerEvents = 'all';
+
+        const isFake = data.result.prediction === "FAKE";
+        const color = isFake ? "var(--danger)" : "var(--success)";
+        
+        // 1. Verdict
+        const verdictLabel = document.getElementById('verdictLabel');
+        verdictLabel.innerText = isFake ? "FAKE DETECTED" : "REAL VIDEO";
+        verdictLabel.style.color = color;
+        
+        // 2. Confidence
+        document.getElementById('confidenceLabel').innerText = `Confidence: ${data.result.confidence}%`;
+
+        // 3. Image Report Link
+        const link = document.getElementById('reportLink');
+        const reportFilename = data.result.report_image;
+
+        if (reportFilename) {
+            // Point to the static mount we just created
+            link.href = `/uploads/${reportFilename}`;
+            link.innerText = "📄 Download Full Forensic Report";
+            link.download = reportFilename; // download when clicked
+        } else {
+            link.style.display = 'none';
+        }
+
+        // 4. Breakdown Bars
+        breakdownContainer.innerHTML = ''; // Clear old
+        const metrics = data.result.breakdown || {};
+        
+        for (const [key, val] of Object.entries(metrics)) {
+            const percent = val * 100;
+            // Determine color for this specific bar
+            let barColor = '#555';
+            if (val > 0.5) barColor = 'var(--danger)'; 
+            else barColor = 'var(--success)';
+
+            const row = document.createElement('div');
+            row.className = 'metric-row';
+            row.innerHTML = `
+                <span style="width: 80px; text-transform: capitalize;">${key}</span>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" style="width: ${percent}%; background: ${barColor};"></div>
+                </div>
+                <span style="width: 40px; text-align: right;">${Math.round(percent)}%</span>
+            `;
+            breakdownContainer.appendChild(row);
+        }
+    }
+</script>
+
+</body>
+</html>

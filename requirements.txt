@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+celery[redis]
+torch
+torchvision
+opencv-python-headless
+matplotlib
+python-multipart
+numpy
+pillow
+librosa
