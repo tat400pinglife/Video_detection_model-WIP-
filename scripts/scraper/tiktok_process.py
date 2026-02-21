@@ -16,12 +16,12 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
-from bs4 import BeautifulSoup
 from pathlib import Path
 from tqdm import tqdm
 from typing import Callable
 
 import pandas as pd
+import numpy as np
 import time
 import re
 import os
@@ -87,8 +87,6 @@ def grab_tiktok_links(
     return list(links)
 
 
-
-
 def save_links(
         links: list,
         path: Path = Path("csvs"),
@@ -101,7 +99,10 @@ def save_links(
     path.mkdir(parents=True, exist_ok=True)
     filepath = path / filename
 
-    new_df = pd.DataFrame(links, columns=["url"])
+    new_df = pd.DataFrame({
+        "url": links,
+        "ai": np.nan
+    })
 
     if not filepath.exists():
         new_df.to_csv(filepath, index=False)
@@ -112,11 +113,10 @@ def save_links(
         combined_df.to_csv(filepath, index=False)
 
 
-
 def save_video_from_url(
         url: str,
         path: Path = Path("data")
-        ) -> Path:
+        ) -> Path | None:
     """
     Args:
         url: TikTok video url
@@ -136,11 +136,13 @@ def save_video_from_url(
 
     video_fn = path / f"@{username}_{video_id}.mp4"
 
-    tt.save_tiktok(url, True,
+    res = tt.save_tiktok(url, True,
                    video_fn = video_fn,
-                   metadata_fn = path / 'metadata.csv'
+                   metadata_fn = path / 'metadata.csv',
+                   return_fns = True
                    )
-    return video_fn
+    
+    return video_fn if res else None
 
 
 def save_video_batch(
@@ -174,32 +176,38 @@ def save_video_batch(
         
         if csv_files:
             dfs = [pd.read_csv(file) for file in csv_files]
-            combined_df = pd.concat(dfs, ignore_index=True)
+            df = pd.concat(dfs, ignore_index=True)
             
-            links = combined_df['url'].tolist()
             print(f"Loaded {len(links)} URLs from {len(csv_files)} CSV files")
         else:
             print(f"No CSV files found in {link_folder}")
 
-    if not links:
+    length = len(df)
+    if length == 0:
         print("No links found, and none could be imported.")
         return
-    if start > len(links):
+    
+    if start > length:
         print(f"Start index {start} is Out of range.")
         return
-    end = min(len(links), start + goal)
+    
+    end = min(length, start + goal)
 
-    for i in tqdm(range(start, end), 
-              desc="Downloading videos",
-              unit="video"):
-        res_path = save_video_from_url(links[i], path)
-        if fn != None:
+    for url, ai in tqdm(df.iloc[start:end].itertuples(index=False, name='Row'),
+                    desc="Downloading videos",
+                    unit="video"):
+        if ai == 'n':
+            # Not an AI video OR link is dead
+            continue
+
+        res_path = save_video_from_url(url, path)
+        if fn != None and res_path != None:
             fn(res_path, *args, **kwargs)
             if delete_after:
                 os.remove(res_path)
 
         time.sleep(wait)
-    print(f"Videos saved to {path}.")
+    print(f"Finished processing videos from [{start}, {end}).")
 
 
 if __name__ == "__main__":
