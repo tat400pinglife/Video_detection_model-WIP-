@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore")
 
 # from model_architecture import MoE_Investigator
 from architecture import MoE_Investigator
-from imports.utils import get_frames, compute_features
+from imports.space import get_frames, compute_features
 
 class DeepfakeCaseFile:
     def __init__(self, router_path="./models/router_weights.pth"):

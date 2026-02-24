@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from imports.gpu_proccesor import VideoTensorizer  # Imports the new modular GPU class
 # create_tensors.py
-from imports.utils import process_dataset
+from imports.space import process_dataset
+
 RUNOLDUTILS = True
 MAXFRAMES = 32
 

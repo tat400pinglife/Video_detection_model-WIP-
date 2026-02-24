@@ -11,18 +11,67 @@ from model_architecture import AudioExpert
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 warnings.filterwarnings("ignore") # Ignore specific torch warnings if needed
 
+# class FastAudioDataset(Dataset):
+#     def __init__(self, root_dir):
+#         # FAST INIT: We don't load files. We just scan paths.
+#         self.files = list(Path(root_dir).rglob("*.pt"))
+#         self.labels = []
+        
+#         print(f"Indexing {len(self.files)} files...")
+        
+#         valid_files = []
+#         for f in self.files:
+#             # Check path string for label
+#             # Note: This relies on your create_tensors.py structure
+#             if "real" in str(f.parent).lower():
+#                 self.labels.append(0)
+#                 valid_files.append(f)
+#             elif "fake" in str(f.parent).lower():
+#                 self.labels.append(1)
+#                 valid_files.append(f)
+#             else:
+#                 # If structure is flat, we might have to load, but let's assume structure exists
+#                 # Fallback: Check file name or skip
+#                 pass 
+                
+#         self.files = valid_files
+#         print(f"Index complete. Found {len(self.files)} samples.")
+
+#     def __len__(self): return len(self.files)
+
+#     def __getitem__(self, idx):
+#         try:
+#             path = self.files[idx]
+#             data = torch.load(path, weights_only=False)
+            
+#             spec = data['audio'] # [1, 128, 128]
+            
+#             # --- SILENCE CHECK (Lazy) ---
+#             # If audio is silent, return None. 
+#             # The collate_fn will throw this away so it doesn't break the batch.
+#             if spec.max() < 0.01:
+#                 return None
+            
+#             # Ensure shape [1, 128, 128]
+#             if spec.ndim == 2: spec = spec.unsqueeze(0)
+#             if spec.ndim == 4: spec = spec.squeeze(0)
+            
+#             label = torch.tensor([data['label']], dtype=torch.float32)
+            
+#             return spec.float(), label
+            
+#         except Exception as e:
+#             # On file corruption, return None
+#             return None
+
 class FastAudioDataset(Dataset):
-    def __init__(self, root_dir):
-        # FAST INIT: We don't load files. We just scan paths.
-        self.files = list(Path(root_dir).rglob("*.pt"))
+    def __init__(self, folder_path):
+        self.files = list(Path(folder_path).rglob("*.pt"))
+        print(f"Audio Dataset: Found {len(self.files)} samples.")
+                # Fast Label Scan for Class Balancing
         self.labels = []
-        
-        print(f"Indexing {len(self.files)} files...")
-        
         valid_files = []
         for f in self.files:
-            # Check path string for label
-            # Note: This relies on your create_tensors.py structure
             if "real" in str(f.parent).lower():
                 self.labels.append(0)
                 valid_files.append(f)
@@ -30,12 +79,7 @@ class FastAudioDataset(Dataset):
                 self.labels.append(1)
                 valid_files.append(f)
             else:
-                # If structure is flat, we might have to load, but let's assume structure exists
-                # Fallback: Check file name or skip
-                pass 
-                
-        self.files = valid_files
-        print(f"Index complete. Found {len(self.files)} samples.")
+                pass # Skip unknown folders
 
     def __len__(self): return len(self.files)
 
@@ -44,24 +88,19 @@ class FastAudioDataset(Dataset):
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
             
-            spec = data['audio'] # [1, 128, 128]
+            # 1. Check for key (Safeguard)
+            if 'audio' not in data: return None
+                
+            # 2. DECOMPRESS: Float16 -> Float32
+            x = data['audio'].float() # [1, 256, 256]
             
-            # --- SILENCE CHECK (Lazy) ---
-            # If audio is silent, return None. 
-            # The collate_fn will throw this away so it doesn't break the batch.
-            if spec.max() < 0.01:
-                return None
+            # 3. Shape Safety
+            if x.ndim == 2: x = x.unsqueeze(0)
             
-            # Ensure shape [1, 128, 128]
-            if spec.ndim == 2: spec = spec.unsqueeze(0)
-            if spec.ndim == 4: spec = spec.squeeze(0)
+            y = torch.tensor([data['label']], dtype=torch.float32)
+            return x, y
             
-            label = torch.tensor([data['label']], dtype=torch.float32)
-            
-            return spec.float(), label
-            
-        except Exception as e:
-            # On file corruption, return None
+        except Exception:
             return None
 
 # CUSTOM BATCH BUILDER

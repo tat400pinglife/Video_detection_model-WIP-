@@ -21,11 +21,56 @@ NUM_WORKERS = 4
 
 warnings.filterwarnings("ignore")
 
+# class RobustNoiseDataset(Dataset):
+#     def __init__(self, folder_path):
+#         self.files = list(Path(folder_path).rglob("*.pt"))
+#         print(f"Index complete. Found {len(self.files)} samples.")
+        
+#         # Fast Label Scan for Class Balancing
+#         self.labels = []
+#         valid_files = []
+#         for f in self.files:
+#             if "real" in str(f.parent).lower():
+#                 self.labels.append(0)
+#                 valid_files.append(f)
+#             elif "fake" in str(f.parent).lower():
+#                 self.labels.append(1)
+#                 valid_files.append(f)
+#             else:
+#                 pass # Skip unknown folders
+        
+#         self.files = valid_files
+
+#     def __len__(self):
+#         return len(self.files)
+
+#     def __getitem__(self, idx):
+#         try:
+#             path = self.files[idx]
+#             data = torch.load(path, weights_only=False)
+            
+#             # Extract PRNU
+#             if 'prnu' not in data: return None
+            
+#             x = data['prnu'].float()
+            
+#             # Ensure shape [1, 256, 256]
+#             if x.ndim == 2: x = x.unsqueeze(0)
+#             if x.ndim == 4: x = x.squeeze(0)
+            
+#             # Nan Guard
+#             if torch.isnan(x).any(): return None
+            
+#             y = torch.tensor([data['label']], dtype=torch.float32)
+#             return x, y
+#         except Exception:
+#             return None
+
 class RobustNoiseDataset(Dataset):
     def __init__(self, folder_path):
         self.files = list(Path(folder_path).rglob("*.pt"))
-        print(f"Index complete. Found {len(self.files)} samples.")
-        
+        print(f"Freq Dataset: Found {len(self.files)} samples.")
+
         # Fast Label Scan for Class Balancing
         self.labels = []
         valid_files = []
@@ -38,31 +83,26 @@ class RobustNoiseDataset(Dataset):
                 valid_files.append(f)
             else:
                 pass # Skip unknown folders
-        
-        self.files = valid_files
 
-    def __len__(self):
-        return len(self.files)
+    def __len__(self): return len(self.files)
 
     def __getitem__(self, idx):
         try:
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
             
-            # Extract PRNU
+            # 1. Check for key (Safeguard)
             if 'prnu' not in data: return None
+                
+            # 2. DECOMPRESS: Float16 -> Float32
+            x = data['prnu'].float() # [1, 256, 256]
             
-            x = data['prnu'].float()
-            
-            # Ensure shape [1, 256, 256]
+            # 3. Shape Safety
             if x.ndim == 2: x = x.unsqueeze(0)
-            if x.ndim == 4: x = x.squeeze(0)
-            
-            # Nan Guard
-            if torch.isnan(x).any(): return None
             
             y = torch.tensor([data['label']], dtype=torch.float32)
             return x, y
+            
         except Exception:
             return None
 
@@ -181,6 +221,13 @@ def train_noise_expert():
                 
             torch.save(full_state, SAVE_PATH)
             print(f">> Saved Best Model ({acc:.2f}%)")
+        
+        if avg_train_loss < 0.2:
+            print("Early stopping triggered by low training loss.")
+            break
+    torch.save(full_state, SAVE_PATH)
+    print(f"Done. Final model saved to {SAVE_PATH}")
+
 
 if __name__ == "__main__":
     train_noise_expert()

@@ -15,48 +15,85 @@ LR = 0.0001
 EPOCHS = 30
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# class SupervisedArtifactDataset(Dataset):
+#     def __init__(self, root_dir):
+#         self.files = list(Path(root_dir).rglob("*.pt"))
+#         self.clean_files = []
+        
+#         # Filter and Assign Labels
+#         print("Indexing Dataset...")
+#         for f in self.files:
+#             # We assume folder structure .../real/video.pt or .../fake/video.pt
+#             if "fake" in str(f).lower():
+#                 self.clean_files.append((f, 1.0)) # Label 1 = Fake
+#             elif "real" in str(f).lower():
+#                 self.clean_files.append((f, 0.0)) # Label 0 = Real
+        
+#         random.shuffle(self.clean_files)
+#         print(f"Found {len(self.clean_files)} labeled samples.")
+
+#     def __len__(self): return len(self.clean_files)
+
+#     def __getitem__(self, idx):
+#         path, label = self.clean_files[idx]
+#         try:
+#             data = torch.load(path, weights_only=False)
+            
+#             # Try to get batch or single frame
+#             if 'rgb_batch' in data:
+#                 frames = data['rgb_batch']
+#                 # Pick random frame to train on
+#                 ridx = random.randint(0, frames.shape[0]-1)
+#                 img = frames[ridx]
+#             else:
+#                 img = data['rgb_mid']
+            
+#             # Target: If Real (0.0), Mask is all Zeros.
+#             #         If Fake (1.0), Mask is all Ones (Simple Supervised Baseline)
+#             #         (Ideally we would have ground-truth masks, but global labels work for classification)
+#             target = torch.full((1, 256, 256), label, dtype=torch.float32)
+            
+#             return img.float(), target
+            
+#         except:
+#             return torch.zeros(3,256,256), torch.zeros(1,256,256)
+
 class SupervisedArtifactDataset(Dataset):
     def __init__(self, root_dir):
         self.files = list(Path(root_dir).rglob("*.pt"))
-        self.clean_files = []
-        
-        # Filter and Assign Labels
-        print("Indexing Dataset...")
-        for f in self.files:
-            # We assume folder structure .../real/video.pt or .../fake/video.pt
-            if "fake" in str(f).lower():
-                self.clean_files.append((f, 1.0)) # Label 1 = Fake
-            elif "real" in str(f).lower():
-                self.clean_files.append((f, 0.0)) # Label 0 = Real
-        
-        random.shuffle(self.clean_files)
-        print(f"Found {len(self.clean_files)} labeled samples.")
+        print(f"Artifact Dataset: Found {len(self.files)} samples.")
 
-    def __len__(self): return len(self.clean_files)
+    def __len__(self): return len(self.files)
 
     def __getitem__(self, idx):
-        path, label = self.clean_files[idx]
         try:
+            path = self.files[idx]
             data = torch.load(path, weights_only=False)
             
-            # Try to get batch or single frame
+            # 1. LOAD COMPRESSED RGB [32, 3, 256, 256] (Uint8)
             if 'rgb_batch' in data:
-                frames = data['rgb_batch']
-                # Pick random frame to train on
-                ridx = random.randint(0, frames.shape[0]-1)
-                img = frames[ridx]
+                # Pick 1 random frame from the batch
+                ridx = random.randint(0, data['rgb_batch'].shape[0]-1)
+                img_uint8 = data['rgb_batch'][ridx] # Shape: [3, 256, 256]
+                
+                # 2. DECOMPRESS: Uint8 (0-255) -> Float32 (0.0-1.0)
+                img = img_uint8.float() / 255.0
             else:
-                img = data['rgb_mid']
+                # Fallback for old files (if any)
+                img = data['rgb_mid'].float()
+
+            # 3. Create Label/Target
+            label = float(data['label']) # 1.0 or 0.0
             
-            # Target: If Real (0.0), Mask is all Zeros.
-            #         If Fake (1.0), Mask is all Ones (Simple Supervised Baseline)
-            #         (Ideally we would have ground-truth masks, but global labels work for classification)
+            # Create a segmentation mask (1.0 for Fake, 0.0 for Real)
+            # This is a "Weakly Supervised" approach
             target = torch.full((1, 256, 256), label, dtype=torch.float32)
             
-            return img.float(), target
+            return img, target
             
-        except:
-            return torch.zeros(3,256,256), torch.zeros(1,256,256)
+        except Exception as e:
+            # Return dummy if file is corrupted
+            return torch.zeros(3, 256, 256), torch.zeros(1, 256, 256)
 
 def train_supervised():
     dataset = SupervisedArtifactDataset(DATA_PATH)
