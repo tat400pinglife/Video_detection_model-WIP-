@@ -1,3 +1,17 @@
+"""
+Make sure all weights are in the ./models/ directory:
+- router_weights.pth
+- temporal_lstm.pth
+- artifact_model.pth
+- noise_model.pth
+- frequency_model.pth
+- audio_model.pth
+
+If not, run the train script in the same folder
+
+This is secondary version of run script that doesnt have a separate focus on the lsmt.
+Runs faster but accuracy might be slightly worse. A tradeoff for not taking the whole video for temporal analysis.
+"""
 import torch
 import cv2
 import numpy as np
@@ -10,7 +24,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # from model_architecture import MoE_Investigator
-from architecture import MoE_Investigator
+from model_training.model_architecture import MoE_Investigator
 from imports.space import get_frames, compute_features
 
 class DeepfakeCaseFile:
