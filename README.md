@@ -1,5 +1,6 @@
 # AI_video_detection_Model
 
-Look in latest Branch
+READ SETUP.txt
+
 
 Testing feasibility of project and learning how to make a model from scratch
