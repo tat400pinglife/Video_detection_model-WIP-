@@ -76,23 +76,23 @@ class TimeDistributed(nn.Module):
         return y.view(b, s, -1)
 
 class TemporalDetector(nn.Module):
-    def __init__(self, sequence_length=5):
+    def __init__(self, sequence_length=12):
         super().__init__()
         
-        # 1. The Eye (Spatial CNN)
-        # We strip the final layers to get raw features
         self.cnn_encoder = nn.Sequential(
             nn.Conv2d(1, 16, 3, 1, 1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(16, 32, 3, 1, 1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, 1, 1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Flatten()
+            nn.AdaptiveAvgPool2d((4, 4)), 
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 4, 512),   
+            nn.ReLU(),
+            nn.Dropout(0.3)
         )
-        # Wrap it
+        
         self.time_distributed = TimeDistributed(self.cnn_encoder)
-        # Feature size calculation: 256 -> 128 -> 64 -> 32
-        # Final shape: 64 channels * 32 * 32
-        self.feature_size = 64 * 32 * 32 
-        # 2. The Memory (LSTM)
+        self.feature_size = 512 
+        
         self.lstm = nn.LSTM(
             input_size=self.feature_size,
             hidden_size=256,
@@ -100,21 +100,29 @@ class TemporalDetector(nn.Module):
             batch_first=True,
             dropout=0.2
         )
-        # 3. The Verdict
-        self.fc = nn.Linear(256, 1)
+        
+        # --- THE FIX: Expand the input size from 256 to 259 to fit the math scalars ---
+        self.fc = nn.Sequential(
+            nn.Linear(256 + 3, 64), # 256 from LSTM + 3 from tabular math
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
 
-    def forward(self, x):
-        # Input: [Batch, Seq, 1, 256, 256]
-        # 1. Get features for every frame
-        # Out: [Batch, Seq, 65536]
-        seq_features = self.time_distributed(x)
+    # Note the new 'x_tab' parameter
+    def forward(self, x_seq, x_tab):
+        # 1. Image Sequence -> CNN
+        seq_features = self.time_distributed(x_seq)
         
-        # 2. Process time
-        # Out: [Batch, Seq, 256]
+        # 2. CNN Features -> LSTM
         lstm_out, _ = self.lstm(seq_features)
-        last_step = lstm_out[:, -1, :]
+        last_step = lstm_out[:, -1, :] # Shape: [Batch, 256]
         
-        return self.fc(last_step)
+        # 3. Inject Mathematical Features
+        # Combine the LSTM understanding with the hard math: [Batch, 259]
+        combined = torch.cat((last_step, x_tab), dim=1)
+        
+        # 4. Final Verdict
+        return self.fc(combined)
     
 # class TemporalDetector(nn.Module):
 #     def __init__(self):
