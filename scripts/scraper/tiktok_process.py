@@ -28,6 +28,8 @@ import os
 
 import tiktok_lib as tt
 
+from imports.gpu_proccesor import process_video_gpu
+
 options = Options()
 service = Service(ChromeDriverManager().install())
 
@@ -152,7 +154,7 @@ def save_video_batch(
         goal: int = 10,
         wait: int = 0,
         path: Path = Path("data"),
-        fn: Callable = None,
+        fn: Callable = process_video_gpu,
         delete_after: bool = True,
         *args, **kwargs
         ) -> None:
