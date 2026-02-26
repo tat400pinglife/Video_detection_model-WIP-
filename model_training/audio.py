@@ -11,7 +11,7 @@ from model_architecture import AudioExpert
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 warnings.filterwarnings("ignore") # Ignore specific torch warnings if needed
 
-# class FastAudioDataset(Dataset):
+# class AudioDataset(Dataset):
 #     def __init__(self, root_dir):
 #         # FAST INIT: We don't load files. We just scan paths.
 #         self.files = list(Path(root_dir).rglob("*.pt"))
@@ -64,7 +64,7 @@ warnings.filterwarnings("ignore") # Ignore specific torch warnings if needed
 #             # On file corruption, return None
 #             return None
 
-class FastAudioDataset(Dataset):
+class AudioDataset(Dataset):
     def __init__(self, folder_path):
         self.files = list(Path(folder_path).rglob("*.pt"))
         print(f"Audio Dataset: Found {len(self.files)} samples.")
@@ -119,12 +119,12 @@ def drop_silence_collate(batch):
 
 def train():
     # 1. Setup Data
-    full_dataset = FastAudioDataset("./data/processed_data")
+    full_dataset = AudioDataset("./data/processed_data")
     if len(full_dataset) == 0: 
         print("No data found. Check paths.")
         return
 
-    # 2. Split Train/Val (Essential!)
+    # 2. Split Train/Val
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_set, val_set = random_split(full_dataset, [train_size, val_size])

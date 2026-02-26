@@ -1,3 +1,18 @@
+"""
+Make sure all weights are in the ./models/ directory:
+- router_weights.pth
+- temporal_lstm.pth
+- artifact_model.pth
+- noise_model.pth
+- frequency_model.pth
+- audio_model.pth
+
+If not, run the train script in the same folder
+
+This is a more indepth analysis that takes strides of the whole video for temporal analysis.
+Runs slower but accuracy might be increased. A tradeoff for taking the whole video for temporal analysis.
+"""
+
 import torch
 import cv2
 import numpy as np
@@ -10,8 +25,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # from model_architecture import MoE_Investigator
-from architecture import MoE_Investigator
-from imports.utils import compute_features
+from model_training.model_architecture import MoE_Investigator
+from imports.space import compute_features
 
 def get_multi_clips(video_path, size=256, clip_len=32, num_clips=3):
     path_obj = Path(video_path).resolve()

@@ -1,3 +1,11 @@
+"""
+Docstring for model_training.check
+
+This is a quick check on the accuracy for each model. Will be used to find signs of over/underfitting.
+
+"""
+
+
 import torch
 from torch.utils.data import DataLoader
 from moe2 import ForensicDataset, DATA_FOLDER, SEQ_LEN
@@ -20,7 +28,7 @@ def check():
     ).to(DEVICE)
     model.eval()
     
-    print(f"\n--- Expert Sanity Check ({len(ds)} samples) ---")
+    print(f"\n--- Expert Check ({len(ds)} samples) ---")
     
     accs = {"temp": 0, "art": 0, "noise": 0, "freq": 0, "audio": 0, "moe": 0}
     

@@ -5,7 +5,7 @@ import shutil
 import os
 import uuid
 from celery.result import AsyncResult
-from worker import celery_app, analyze_task
+from unused_docker_files.worker import celery_app, analyze_task
 
 app = FastAPI()
 
