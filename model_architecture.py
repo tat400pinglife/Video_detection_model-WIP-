@@ -309,3 +309,20 @@ class MoE_Investigator(nn.Module):
                 self.expert_noise_net.load_state_dict(prnu_state)
             print(">> Loaded Noise Expert.")
         except: pass
+        
+def return_model_parameters():
+    # print all model parameters and their shapes, indicating which are trainable
+    model = MoE_Investigator()
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"Trainable Parameter: {name} - {param.shape}")
+        else:
+            print(f"Frozen Parameter: {name} - {param.shape}")
+    
+    return
+
+def return_model_summary():
+    model = MoE_Investigator()
+    print("Model Summary:")
+    print(model)
+    return
