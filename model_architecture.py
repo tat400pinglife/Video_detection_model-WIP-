@@ -326,3 +326,15 @@ def return_model_summary():
     print("Model Summary:")
     print(model)
     return
+
+def return_model_size():
+    
+    return {
+        "MoE_Investigator": sum(p.numel() for p in MoE_Investigator().parameters()),
+        "TemporalDetector": sum(p.numel() for p in TemporalDetector().parameters()),
+        "ArtifactSegmentor": sum(p.numel() for p in ArtifactSegmentor().parameters()),
+        "InvestigatorRouter": sum(p.numel() for p in InvestigatorRouter().parameters()),
+        "AudioExpert": sum(p.numel() for p in AudioExpert().parameters()),
+        "FrequencyExpert": sum(p.numel() for p in FrequencyExpert().parameters()),
+        "PRNUBranch": sum(p.numel() for p in PRNUBranch().parameters())
+    }
