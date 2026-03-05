@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import warnings
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Import Architecture
 from model_architecture import PRNUBranch
@@ -163,7 +164,11 @@ def train_noise_expert():
     criterion = nn.BCEWithLogitsLoss()
     
     best_acc = 0.0
-    
+    loss_data = []
+    val_acc_data = []
+    val_loss_data = []
+    train_acc_data = []
+
     for epoch in range(EPOCHS):
         # TRAIN
         net.train(); head.train()
@@ -183,9 +188,14 @@ def train_noise_expert():
             
             train_loss += loss.item()
             count += 1
+            # training accuracy
+            train_acc = (torch.sigmoid(pred) > 0.5).float()
+            
             
         avg_train_loss = train_loss / max(count, 1)
-
+        loss_data.append(avg_train_loss)
+        train_acc_data.append(int(train_acc.sum().item()) / (len(train_loader.dataset) + 1e-8) * 100)
+        
         # VALIDATE
         net.eval(); head.eval()
         correct = 0; total = 0
@@ -200,8 +210,12 @@ def train_noise_expert():
                 
                 correct += (pred == y).sum().item()
                 total += y.size(0)
+                # validation loss
+                val_loss = criterion(head(feats), y)
         
         acc = 100 * correct / (total + 1e-8)
+        val_acc_data.append(acc)
+        val_loss_data.append(val_loss.item()) 
         print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Val Acc: {acc:.2f}%")
         
         # Save Best
@@ -224,9 +238,30 @@ def train_noise_expert():
         
         if avg_train_loss < 0.2:
             print("Early stopping triggered by low training loss.")
+            if acc > best_acc:
+                torch.save(full_state, SAVE_PATH)
             break
-    torch.save(full_state, SAVE_PATH)
+    #torch.save(full_state, SAVE_PATH)
     print(f"Done. Final model saved to {SAVE_PATH}")
+    # plot loss and val_acc
+    plt.figure(figsize=(10,5))
+    plt.plot(loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("noise_model_training_loss.png")
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.plot(train_acc_data, label='Training Accuracy')
+    plt.title('Validation Accuracy and training accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.savefig("noise_model_training_accuracy.png")
+
 
 
 if __name__ == "__main__":

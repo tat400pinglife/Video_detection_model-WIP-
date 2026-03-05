@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, random_
 from pathlib import Path
 import numpy as np
 import warnings
+import matplotlib.pyplot as plt
 
 from model_architecture import AudioExpert
 
@@ -172,6 +173,11 @@ def train():
     patience = 5
     trigger_times = 0
     
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    training_acc_data = []
+    
     for epoch in range(100):
         # TRAIN
         model.train()
@@ -189,7 +195,12 @@ def train():
             optimizer.step()
             
             train_loss += loss.item()
+            # training acc
+            train_acc = (torch.sigmoid(out) > 0.5).float()
             
+        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
+        training_acc_data.append(int(train_acc.sum().item()) / (len(train_loader.dataset) + 1e-8) * 100)
+        
         # VALIDATE
         model.eval()
         correct = 0
@@ -210,10 +221,12 @@ def train():
                 total += labels.size(0)
         
         # Metrics
-        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0
         val_acc = 100 * correct / (total + 1e-8)
         
+        val_loss_data.append(avg_val_loss)
+        val_acc_data.append(val_acc)
+
         print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Validation Loss: {avg_val_loss:.4f} | Acc: {val_acc:.2f}%")
 
         # Save best model
@@ -229,7 +242,24 @@ def train():
             if trigger_times >= patience:
                 print("Early Stopping!")
                 break
-            
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(train_loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation Loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("audio_model_training_loss.png")
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(training_acc_data, label='Training Accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.savefig("audio_model_training_accuracy.png")
     print("Training Complete.")
 
 if __name__ == "__main__":
