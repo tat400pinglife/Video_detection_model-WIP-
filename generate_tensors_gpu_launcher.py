@@ -13,7 +13,7 @@ if __name__ == "__main__":
         path=Path("./data/videos/temp"),
         start=0,
         goal=3,                  # big number
-        wait=5,                       # wait 3 seconds to avoid ban.
+        wait=15,                       # wait 3 seconds to avoid ban.
         fn=process_video_gpu,         # GPU please work
         delete_after=True,            # Deletes the mp4 after processing
         output_dir="./data/processed_data/fake",
