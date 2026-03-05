@@ -6,6 +6,7 @@ from pathlib import Path
 import random
 import numpy as np
 from model_architecture import ArtifactSegmentor
+import matplotlib.pyplot as plt
 
 # CONFIG
 DATA_PATH = "./data/processed_data"
@@ -114,7 +115,12 @@ def train_supervised():
     print(f"--- Starting Supervised Training on {len(train_ds)} samples ---")
     patience = 3
     trigger_times = 0
-
+    
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    training_acc_data = []
+    
 
     for epoch in range(EPOCHS):
         model.train()
@@ -130,8 +136,13 @@ def train_supervised():
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            # training acc
+            train_acc = (torch.sigmoid(pred) > 0.5).float()
+            
             
         avg_train = train_loss / len(train_loader)
+        train_loss_data.append(avg_train)
+        training_acc_data.append(int(train_acc.sum().item()) / (len(train_loader.dataset) + 1e-8) * 100)
         
         # Validate
         model.eval()
@@ -143,8 +154,12 @@ def train_supervised():
                 pred = model(x)
                 loss = criterion(pred, y)
                 val_loss += loss.item()
-                
+                # validation acc
+                val_acc = (torch.sigmoid(pred) > 0.5).float()
+        
+        
         avg_val = val_loss / len(val_loader)
+        val_acc_data.append(int(val_acc.sum().item()) / (len(val_loader.dataset) + 1e-8) * 100)
         print(f"Epoch {epoch+1} | Train: {avg_train:.4f} | Val: {avg_val:.4f}")
         
         if val_loss < best_val_loss:
@@ -161,7 +176,24 @@ def train_supervised():
             if trigger_times >= patience:
                 print("Early Stopping!")
                 break
-
+    # plot loss and val_acc
+    plt.figure(figsize=(10,5))
+    plt.plot(train_loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation Loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("artifact_model_training_loss.png")
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(training_acc_data, label='Training Accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.savefig("artifact_model_training_accuracy.png")
     print("Done.")
 
 

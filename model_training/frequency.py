@@ -111,6 +111,11 @@ def drop_corrupt_collate(batch):
 def train():
     print(f"Using device: {DEVICE}")
     
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    train_acc_data = []
+
     # 1. Setup Data
     dataset = RobustFrequencyDataset(DATA_FOLDER)
     if len(dataset) == 0:
@@ -181,9 +186,13 @@ def train():
             
             train_loss += loss.item()
             count += 1
+            # training accuracy
+            train_acc = (torch.sigmoid(pred) > 0.5).float()
             
         avg_train_loss = train_loss / max(count, 1)
-
+        train_loss_data.append(avg_train_loss)
+        train_acc_data.append(100 * train_acc.sum().item() / (len(train_loader.dataset) + 1e-8))
+        
         # Validation
         model.eval()
         correct = 0
@@ -200,8 +209,15 @@ def train():
                 
                 correct += (preds == y).sum().item()
                 total += y.size(0)
+                # validation loss
+                val_loss = criterion(model(X), y)
+        
+        avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0
+      
         
         acc = 100 * correct / (total + 1e-8)
+        val_acc_data.append(acc)
+        val_loss_data.append(avg_val_loss)
         print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Acc: {acc:.2f}%")
         
         if acc >= best_acc and acc > 50.0: # Only save if better than random guessing

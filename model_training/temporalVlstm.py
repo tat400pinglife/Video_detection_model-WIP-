@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import os
 from pathlib import Path
 import random
+import matplotlib.pyplot as plt
 
 # Import your model
 from model_architecture import TemporalDetector
@@ -98,6 +99,11 @@ class TemporalSequenceDataset(Dataset):
 def train():
     print(f"Using Device: {DEVICE}")
     
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    train_acc_data = []
+
     # 1. Setup Data
     # We split the file list first to ensure no leakage
     all_files = list(Path(DATA_FOLDER).rglob("*.pt"))
@@ -147,6 +153,13 @@ def train():
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            # training accuracy
+            train_acc = (torch.sigmoid(pred) > 0.5).float()
+    
+        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
+        train_loss_data.append(avg_train_loss)
+        train_acc_data.append(100 * train_acc.sum().item() / (len(train_loader.dataset) + 1e-8))
+            
             
 # --- VALIDATION STEP ---
         model.eval()
@@ -182,7 +195,9 @@ def train():
         avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
         avg_val_loss = val_loss / len(val_loader)
         acc = 100 * correct / (total + 1e-8)
-        
+        val_acc_data.append(acc)
+        val_loss_data.append(avg_val_loss)
+
         print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Acc: {acc:.2f}%")
         # stop if loss is less 0.2
         if avg_train_loss < 0.2:
@@ -191,6 +206,26 @@ def train():
             break
 
     torch.save(model.state_dict(), SAVE_PATH)
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_loss_data, label="Train Loss")
+    plt.plot(val_loss_data, label="Val Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("Training and Validation Loss")
+    plt.savefig("temporal_model_training_loss.png")
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_acc_data, label="Train Accuracy")
+    plt.plot(val_acc_data, label="Val Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy (%)")
+    plt.legend()
+    plt.title("Training and Validation Accuracy")
+    plt.savefig("temporal_model_training_accuracy.png")
+
+
     print("Done.")
 
 if __name__ == "__main__":

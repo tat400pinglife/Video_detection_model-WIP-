@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import os
 from tqdm import tqdm
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Import the architecture
 from model_architecture import MoE_Investigator
@@ -79,6 +80,12 @@ class ForensicDataset(Dataset):
 def train():
     print(f"Initializing STABLE MoE Training on {DEVICE}...")
     
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    train_acc_data = []
+
+
     full_dataset = ForensicDataset(DATA_FOLDER, seq_len=SEQ_LEN)
     if len(full_dataset) == 0: return
 
@@ -134,9 +141,18 @@ def train():
             running_loss += loss.item()
             avg_weights += route_weights.detach().cpu().numpy().mean(axis=0)
             
+            # validation loss
+            val_loss = criterion(predictions, labels)
+            val_loss_data.append(val_loss.item())
+            # training accuracy
+            train_acc = (torch.sigmoid(predictions) > 0.5).float()
+            train_acc_data.append(100 * train_acc.sum().item() / (len(train_loader.dataset) + 1e-8))    
+            
         avg_weights /= len(train_loader)
         val_acc = evaluate(model, val_loader)
-        
+        val_loss_data.append(val_loss.item())
+        val_acc_data.append(val_acc)
+        train_loss_data.append(running_loss / len(train_loader))
         w_str = " | ".join([f"{x*100:.1f}%" for x in avg_weights])
         print(f"E{epoch+1} Loss: {running_loss/len(train_loader):.3f} | Acc: {val_acc:.1f}%")
         print(f"Weights: [ Motn | Artf | Nois | Audi | Freq ]")
@@ -146,7 +162,26 @@ def train():
             best_acc = val_acc
             os.makedirs("models", exist_ok=True)
             torch.save(model.state_dict(), "models/router_weights.pth")
-
+            
+    plt.figure(figsize=(10,5))
+    plt.plot(train_loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title('Training and Validation Loss')
+    plt.savefig('moe_model_training_loss.png')
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(train_acc_data, label='Training Accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.title('Training and Validation Accuracy')
+    plt.savefig('moe_model_training_accuracy.png')
+    
+    print("Done.")
 def evaluate(model, loader):
     model.eval()
     correct = 0; total = 0
