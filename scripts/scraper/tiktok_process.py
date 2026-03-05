@@ -202,7 +202,11 @@ def save_video_batch(
             # Not an AI video OR link is dead
             continue
 
-        res_path = save_video_from_url(url, path)
+        try:
+            res_path = save_video_from_url(url, path)
+        except Exception as e:
+            print(f"⚠️ Skipping dead link or error on URL {url}: {e}")
+            continue  # This tells Python to skip to the next video in the loop!
         if fn != None and res_path != None:
             fn(res_path, *args, **kwargs)
             if delete_after:
