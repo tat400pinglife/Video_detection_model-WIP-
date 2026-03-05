@@ -18,6 +18,7 @@ jinja2
 selenium
 beautifulsoup4
 pandas
+tqdm
 webdriver-manager
 browser_cookie3
 TikTokApi
