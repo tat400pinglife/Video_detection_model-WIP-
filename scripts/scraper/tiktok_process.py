@@ -139,10 +139,10 @@ def save_video_from_url(
     video_fn = path / f"@{username}_{video_id}.mp4"
 
     res = tt.save_tiktok(url, True,
-                   video_fn = video_fn,
-                   metadata_fn = path / 'metadata.csv',
-                   return_fns = True
-                   )
+                video_fn = video_fn,
+                metadata_fn = path / 'metadata.csv',
+                return_fns = True
+                )
     
     return video_fn if res else None
 
@@ -194,24 +194,24 @@ def save_video_batch(
         return
     
     end = min(length, start + goal)
-
+    count = start
     for url, ai in tqdm(df.iloc[start:end].itertuples(index=False, name='Row'),
                     desc="Downloading videos",
                     unit="video"):
         if ai == 'n':
-            # Not an AI video OR link is dead
+            # Not an AI videol, skip
             continue
-
+        
         try:
             res_path = save_video_from_url(url, path)
         except Exception as e:
-            print(f"⚠️ Skipping dead link or error on URL {url}: {e}")
-            continue  # This tells Python to skip to the next video in the loop!
-        if fn != None and res_path != None:
+            print(f"Error on index {count} with {url}: {e}")
+            continue 
+        if fn != None and res_path != None and os.path.exists(res_path):
             fn(res_path, *args, **kwargs)
             if delete_after:
                 os.remove(res_path)
-
+        count += 1
         time.sleep(wait)
     print(f"Finished processing videos from [{start}, {end}).")
 
