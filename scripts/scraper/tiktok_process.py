@@ -198,8 +198,8 @@ def save_video_batch(
     for url, ai in tqdm(df.iloc[start:end].itertuples(index=False, name='Row'),
                     desc="Downloading videos",
                     unit="video"):
-        if ai == 'n':
-            # Not an AI videol, skip
+        if ai == 'n' or pd.isna(ai):
+            # Not an AI video OR unvalidated, skip
             continue
         
         try:
