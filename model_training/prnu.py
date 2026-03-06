@@ -16,74 +16,33 @@ DATA_FOLDER = "./data/processed_data"
 SAVE_PATH = "models/noise_model.pth"
 BATCH_SIZE = 32
 LR = 0.001
-EPOCHS = 20
+EPOCHS = 50 # adjust accordingly
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-NUM_WORKERS = 4 
+NUM_WORKERS = 4
 
 warnings.filterwarnings("ignore")
 
-# class RobustNoiseDataset(Dataset):
-#     def __init__(self, folder_path):
-#         self.files = list(Path(folder_path).rglob("*.pt"))
-#         print(f"Index complete. Found {len(self.files)} samples.")
-        
-#         # Fast Label Scan for Class Balancing
-#         self.labels = []
-#         valid_files = []
-#         for f in self.files:
-#             if "real" in str(f.parent).lower():
-#                 self.labels.append(0)
-#                 valid_files.append(f)
-#             elif "fake" in str(f.parent).lower():
-#                 self.labels.append(1)
-#                 valid_files.append(f)
-#             else:
-#                 pass # Skip unknown folders
-        
-#         self.files = valid_files
-
-#     def __len__(self):
-#         return len(self.files)
-
-#     def __getitem__(self, idx):
-#         try:
-#             path = self.files[idx]
-#             data = torch.load(path, weights_only=False)
-            
-#             # Extract PRNU
-#             if 'prnu' not in data: return None
-            
-#             x = data['prnu'].float()
-            
-#             # Ensure shape [1, 256, 256]
-#             if x.ndim == 2: x = x.unsqueeze(0)
-#             if x.ndim == 4: x = x.squeeze(0)
-            
-#             # Nan Guard
-#             if torch.isnan(x).any(): return None
-            
-#             y = torch.tensor([data['label']], dtype=torch.float32)
-#             return x, y
-#         except Exception:
-#             return None
 
 class RobustNoiseDataset(Dataset):
     def __init__(self, folder_path):
-        self.files = list(Path(folder_path).rglob("*.pt"))
-        print(f"Freq Dataset: Found {len(self.files)} samples.")
+        all_files = list(Path(folder_path).rglob("*.pt"))
+        print(f"Noise Dataset: Found {len(all_files)} total files, scanning labels...")
 
-        # Fast Label Scan for Class Balancing
+        self.files = []
         self.labels = []
-        valid_files = []
-        for f in self.files:
-            if "real" in str(f.parent).lower():
+        skipped = 0
+        for f in all_files:
+            parent = str(f.parent).lower()
+            if "real" in parent:
+                self.files.append(f)
                 self.labels.append(0)
-                valid_files.append(f)
-            elif "fake" in str(f.parent).lower():
+            elif "fake" in parent:
+                self.files.append(f)
                 self.labels.append(1)
-                valid_files.append(f)
             else:
-                pass # Skip unknown folders
+                skipped += 1
+
+        print(f"  Valid samples: {len(self.files)} | Skipped (unknown folder): {skipped}")
 
     def __len__(self): return len(self.files)
 
@@ -91,20 +50,19 @@ class RobustNoiseDataset(Dataset):
         try:
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
-            
-            # 1. Check for key (Safeguard)
-            if 'prnu' not in data: return None
-                
-            # 2. DECOMPRESS: Float16 -> Float32
-            x = data['prnu'].float() # [1, 256, 256]
-            
-            # 3. Shape Safety
-            if x.ndim == 2: x = x.unsqueeze(0)
-            
+
+            if 'prnu' not in data:
+                return None
+
+            x = data['prnu'].float()  # [1, 256, 256]
+            if x.ndim == 2:
+                x = x.unsqueeze(0)
+
             y = torch.tensor([data['label']], dtype=torch.float32)
             return x, y
-            
-        except Exception:
+
+        except Exception as e:
+            print(f"[WARN] Failed to load sample {idx}: {e}")
             return None
 
 def drop_corrupt_collate(batch):
@@ -158,8 +116,8 @@ def train_noise_expert():
     
     # 5. Initialize Model
     net = PRNUBranch().to(DEVICE)
-    head = nn.Linear(32*32*32, 1).to(DEVICE)
-    
+    head = nn.Linear(32, 1).to(DEVICE)
+
     optimizer = optim.Adam(list(net.parameters()) + list(head.parameters()), lr=LR)
     criterion = nn.BCEWithLogitsLoss()
     
@@ -173,78 +131,73 @@ def train_noise_expert():
         # TRAIN
         net.train(); head.train()
         train_loss = 0
-        count = 0
-        
+        train_correct = 0
+        train_total = 0
+
         for X, y in train_loader:
-            if X is None: continue
+            if X is None:
+                continue
             X, y = X.to(DEVICE), y.to(DEVICE)
-            
+
             optimizer.zero_grad()
             feats = net(X)
             pred = head(feats)
             loss = criterion(pred, y)
             loss.backward()
             optimizer.step()
-            
+
             train_loss += loss.item()
-            count += 1
-            # training accuracy
-            train_acc = (torch.sigmoid(pred) > 0.5).float()
-            
-            
-        avg_train_loss = train_loss / max(count, 1)
+            train_correct += ((torch.sigmoid(pred) > 0.5).float() == y).sum().item()
+            train_total += y.size(0)
+
+        avg_train_loss = train_loss / max(len(train_loader), 1)
+        avg_train_acc = 100 * train_correct / (train_total + 1e-8)
         loss_data.append(avg_train_loss)
-        train_acc_data.append(int(train_acc.sum().item()) / (len(train_loader.dataset) + 1e-8) * 100)
-        
+        train_acc_data.append(avg_train_acc)
+
         # VALIDATE
         net.eval(); head.eval()
-        correct = 0; total = 0
-        
+        correct = 0
+        total = 0
+        val_loss = 0
+
         with torch.no_grad():
             for X, y in val_loader:
-                if X is None: continue
+                if X is None:
+                    continue
                 X, y = X.to(DEVICE), y.to(DEVICE)
-                
+
                 feats = net(X)
-                pred = (torch.sigmoid(head(feats)) > 0.5).float()
-                
-                correct += (pred == y).sum().item()
+                logits = head(feats)  # Single forward pass
+                val_loss += criterion(logits, y).item()
+
+                correct += ((torch.sigmoid(logits) > 0.5).float() == y).sum().item()
                 total += y.size(0)
-                # validation loss
-                val_loss = criterion(head(feats), y)
-        
+
+        avg_val_loss = val_loss / max(len(val_loader), 1)
         acc = 100 * correct / (total + 1e-8)
         val_acc_data.append(acc)
-        val_loss_data.append(val_loss.item()) 
-        print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Val Acc: {acc:.2f}%")
-        
-        # Save Best
-        if acc >= best_acc and acc > 50.0:
+        val_loss_data.append(avg_val_loss)
+
+        print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% "
+              f"| Val Loss: {avg_val_loss:.4f} | Val Acc: {acc:.2f}%")
+
+        if acc > best_acc and acc > 50.0:
             best_acc = acc
             os.makedirs("models", exist_ok=True)
-            
-            full_state = {
-                'prnu_branch.net.0.weight': None, # Dummy key to trigger logic if needed
-            }
-            # Add Net weights with prefix
+            full_state = {}
             for k, v in net.state_dict().items():
                 full_state[f'net.{k}'] = v
-            # Add Head weights (if want to load head later)
             for k, v in head.state_dict().items():
                 full_state[f'head.{k}'] = v
-                
+
             torch.save(full_state, SAVE_PATH)
-            print(f">> Saved Best Model ({acc:.2f}%)")
-        
-        if avg_train_loss < 0.2:
-            print("Early stopping triggered by low training loss.")
-            if acc > best_acc:
-                torch.save(full_state, SAVE_PATH)
-            break
-    #torch.save(full_state, SAVE_PATH)
-    print(f"Done. Final model saved to {SAVE_PATH}")
-    # plot loss and val_acc
-    plt.figure(figsize=(10,5))
+            print(f"  >> Saved Best Model ({acc:.2f}%)")
+
+
+    print(f"Done. Best Val Acc: {best_acc:.2f}%")
+
+    plt.figure(figsize=(10, 5))
     plt.plot(loss_data, label='Training Loss')
     plt.plot(val_loss_data, label='Validation loss')
     plt.title('Training and Validation Loss')
@@ -252,16 +205,17 @@ def train_noise_expert():
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig("noise_model_training_loss.png")
-    
-    plt.figure(figsize=(10,5))
-    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
     plt.plot(train_acc_data, label='Training Accuracy')
-    plt.title('Validation Accuracy and training accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
     plt.legend()
     plt.savefig("noise_model_training_accuracy.png")
-
+    plt.close()
 
 
 if __name__ == "__main__":

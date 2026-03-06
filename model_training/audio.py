@@ -10,77 +10,26 @@ import matplotlib.pyplot as plt
 from model_architecture import AudioExpert
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-warnings.filterwarnings("ignore") # Ignore specific torch warnings if needed
-
-# class AudioDataset(Dataset):
-#     def __init__(self, root_dir):
-#         # FAST INIT: We don't load files. We just scan paths.
-#         self.files = list(Path(root_dir).rglob("*.pt"))
-#         self.labels = []
-        
-#         print(f"Indexing {len(self.files)} files...")
-        
-#         valid_files = []
-#         for f in self.files:
-#             # Check path string for label
-#             # Note: This relies on your create_tensors.py structure
-#             if "real" in str(f.parent).lower():
-#                 self.labels.append(0)
-#                 valid_files.append(f)
-#             elif "fake" in str(f.parent).lower():
-#                 self.labels.append(1)
-#                 valid_files.append(f)
-#             else:
-#                 # If structure is flat, we might have to load, but let's assume structure exists
-#                 # Fallback: Check file name or skip
-#                 pass 
-                
-#         self.files = valid_files
-#         print(f"Index complete. Found {len(self.files)} samples.")
-
-#     def __len__(self): return len(self.files)
-
-#     def __getitem__(self, idx):
-#         try:
-#             path = self.files[idx]
-#             data = torch.load(path, weights_only=False)
-            
-#             spec = data['audio'] # [1, 128, 128]
-            
-#             # --- SILENCE CHECK (Lazy) ---
-#             # If audio is silent, return None. 
-#             # The collate_fn will throw this away so it doesn't break the batch.
-#             if spec.max() < 0.01:
-#                 return None
-            
-#             # Ensure shape [1, 128, 128]
-#             if spec.ndim == 2: spec = spec.unsqueeze(0)
-#             if spec.ndim == 4: spec = spec.squeeze(0)
-            
-#             label = torch.tensor([data['label']], dtype=torch.float32)
-            
-#             return spec.float(), label
-            
-#         except Exception as e:
-#             # On file corruption, return None
-#             return None
+warnings.filterwarnings("ignore")
 
 class AudioDataset(Dataset):
     def __init__(self, folder_path):
-        self.files = list(Path(folder_path).rglob("*.pt"))
-        print(f"Audio Dataset: Found {len(self.files)} samples.")
-                # Fast Label Scan for Class Balancing
+        all_files = list(Path(folder_path).rglob("*.pt"))
+        print(f"Audio Dataset: Found {len(all_files)} total files, scanning labels...")
+        self.files  = []
         self.labels = []
-        valid_files = []
-        for f in self.files:
-            if "real" in str(f.parent).lower():
+        skipped = 0
+        for f in all_files:
+            parent = str(f.parent).lower()
+            if "real" in parent:
+                self.files.append(f)
                 self.labels.append(0)
-                valid_files.append(f)
-            elif "fake" in str(f.parent).lower():
+            elif "fake" in parent:
+                self.files.append(f)
                 self.labels.append(1)
-                valid_files.append(f)
             else:
-                pass # Skip unknown folders
+                skipped += 1
+        print(f"  Valid samples: {len(self.files)} | Skipped (unknown folder): {skipped}")
 
     def __len__(self): return len(self.files)
 
@@ -88,20 +37,19 @@ class AudioDataset(Dataset):
         try:
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
-            
-            # 1. Check for key (Safeguard)
-            if 'audio' not in data: return None
-                
-            # 2. DECOMPRESS: Float16 -> Float32
-            x = data['audio'].float() # [1, 256, 256]
-            
-            # 3. Shape Safety
-            if x.ndim == 2: x = x.unsqueeze(0)
-            
+
+            if 'audio' not in data:
+                return None
+
+            x = data['audio'].float()  # [1, 256, 256]
+            if x.ndim == 2:
+                x = x.unsqueeze(0)
+
             y = torch.tensor([data['label']], dtype=torch.float32)
             return x, y
             
         except Exception:
+            print(f"Failed to load sample {idx}")
             return None
 
 # CUSTOM BATCH BUILDER
@@ -153,8 +101,6 @@ def train():
         collate_fn=drop_silence_collate,
         num_workers=0 # Set to 2 or 4 on Linux/Mac
     )
-    
-    # Val loader doesn't need sampler, just shuffle=False
     val_loader = DataLoader(
         val_set, 
         batch_size=32, 
@@ -166,10 +112,9 @@ def train():
     model = AudioExpert().to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=0.0005)
     criterion = nn.BCEWithLogitsLoss()
-    
-    print(f"Starting Training (Train: {train_size}, Val: {val_size})...")
-    
-    best_val_acc = 100.0
+
+    print(f"Starting Training on {DEVICE} (Train: {train_size}, Val: {val_size})...")
+    best_val_acc = 0.0
     patience = 5
     trigger_times = 0
     
@@ -182,7 +127,8 @@ def train():
         # TRAIN
         model.train()
         train_loss = 0
-        
+        train_correct = 0
+        train_total = 0
         for specs, labels in train_loader:
             if specs is None: continue # Skip empty batches (all silent)
             
@@ -193,14 +139,16 @@ def train():
             loss = criterion(out, labels)
             loss.backward()
             optimizer.step()
-            
+
             train_loss += loss.item()
-            # training acc
-            train_acc = (torch.sigmoid(out) > 0.5).float()
-            
+            train_correct += ((torch.sigmoid(out) > 0.5).float() == labels).sum().item()
+            train_total += labels.size(0)
+
         avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
-        training_acc_data.append(int(train_acc.sum().item()) / (len(train_loader.dataset) + 1e-8) * 100)
-        
+        avg_train_acc = 100 * train_correct / (train_total + 1e-8)
+        train_loss_data.append(avg_train_loss)
+        training_acc_data.append(avg_train_acc)
+
         # VALIDATE
         model.eval()
         correct = 0
@@ -227,23 +175,24 @@ def train():
         val_loss_data.append(avg_val_loss)
         val_acc_data.append(val_acc)
 
-        print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Validation Loss: {avg_val_loss:.4f} | Acc: {val_acc:.2f}%")
+        print(f"Epoch {epoch+1:03d} | Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% "
+              f"| Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}%")
 
-        # Save best model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), "models/audio_expert.pth")
-            print("Model saved.")
-        
-        else: 
-            print("No improvement this epoch.")
+            print(f"  >> Best model saved — Val Acc: {best_val_acc:.2f}%")
+        else:
             trigger_times += 1
-            
+
+            print(f"  No improvement. Patience: {trigger_times}/{patience}")
             if trigger_times >= patience:
                 print("Early Stopping!")
                 break
-    
-    plt.figure(figsize=(10,5))
+
+    print(f"\nTraining complete. Best Val Acc: {best_val_acc:.2f}%")
+
+    plt.figure(figsize=(10, 5))
     plt.plot(train_loss_data, label='Training Loss')
     plt.plot(val_loss_data, label='Validation Loss')
     plt.title('Training and Validation Loss')
@@ -251,8 +200,9 @@ def train():
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig("audio_model_training_loss.png")
-    
-    plt.figure(figsize=(10,5))
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
     plt.plot(training_acc_data, label='Training Accuracy')
     plt.plot(val_acc_data, label='Validation Accuracy')
     plt.title('Training and Validation Accuracy')
@@ -260,7 +210,10 @@ def train():
     plt.ylabel('Accuracy (%)')
     plt.legend()
     plt.savefig("audio_model_training_accuracy.png")
-    print("Training Complete.")
+    plt.close()
+
+    print("Done.")
+
 
 if __name__ == "__main__":
     train()

@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, random_
 from pathlib import Path
 import numpy as np
 import warnings
+import matplotlib.pyplot as plt
 
 # Import Architecture
 from model_architecture import FrequencyExpert
@@ -20,65 +21,28 @@ NUM_WORKERS = 4
 
 warnings.filterwarnings("ignore")
 
-# class RobustFrequencyDataset(Dataset):
-#     def __init__(self, folder_path):
-#         # Scan for all .pt files
-#         self.files = list(Path(folder_path).rglob("*.pt"))
-#         print(f"Index complete. Found {len(self.files)} samples.")
-#         self.labels = []
-#         valid_files = []
-#         for f in self.files:
-#             if "real" in str(f.parent).lower():
-#                 self.labels.append(0)
-#                 valid_files.append(f)
-#             elif "fake" in str(f.parent).lower():
-#                 self.labels.append(1)
-#                 valid_files.append(f)
-#             else:
-#                 pass 
-        
-#         self.files = valid_files
-
-#     def __len__(self):
-#         return len(self.files)
-
-#     def __getitem__(self, idx):
-#         try:
-#             path = self.files[idx]
-#             data = torch.load(path, weights_only=False)
-#             # Extract FFT Tensor
-#             if 'fft' not in data:
-#                 return None
-                
-#             x = data['fft'].float() # [1, 256, 256]
-            
-#             # Ensure correct shape
-#             if x.ndim == 2: x = x.unsqueeze(0)
-#             if x.ndim == 4: x = x.squeeze(0)
-            
-#             y = torch.tensor([data['label']], dtype=torch.float32)
-#             return x, y
-#         except Exception:
-#             # Return None so collate_fn can drop it
-#             return None
 
 class RobustFrequencyDataset(Dataset):
     def __init__(self, folder_path):
-        self.files = list(Path(folder_path).rglob("*.pt"))
-        print(f"Freq Dataset: Found {len(self.files)} samples.")
-        
-                # Fast Label Scan for Class Balancing
+        all_files = list(Path(folder_path).rglob("*.pt"))
+        print(f"Freq Dataset: Found {len(all_files)} total files, scanning labels...")
+
+        self.files  = []
         self.labels = []
-        valid_files = []
-        for f in self.files:
-            if "real" in str(f.parent).lower():
+        skipped = 0
+        for f in all_files:
+            parent = str(f.parent).lower()
+            if "real" in parent:
+                self.files.append(f)
                 self.labels.append(0)
-                valid_files.append(f)
-            elif "fake" in str(f.parent).lower():
+            elif "fake" in parent:
+                self.files.append(f)
                 self.labels.append(1)
-                valid_files.append(f)
             else:
-                pass # Skip unknown folders
+                skipped += 1
+
+        print(f"  Valid samples: {len(self.files)} | Skipped (unknown folder): {skipped}")
+
     def __len__(self): return len(self.files)
 
     def __getitem__(self, idx):
@@ -97,8 +61,9 @@ class RobustFrequencyDataset(Dataset):
             
             y = torch.tensor([data['label']], dtype=torch.float32)
             return x, y
-            
-        except Exception:
+
+        except Exception as e:
+            print(f"[WARN] Failed to load sample {idx}: {e}")
             return None
 
 def drop_corrupt_collate(batch):
@@ -171,11 +136,11 @@ def train():
     for epoch in range(EPOCHS):
         model.train()
         train_loss = 0
-        count = 0
-        
+        train_correct = 0
+        train_total = 0
         for X, y in train_loader:
-            if X is None: continue # Skip empty batches
-            
+            if X is None:
+                continue
             X, y = X.to(DEVICE), y.to(DEVICE)
             
             optimizer.zero_grad()
@@ -185,47 +150,68 @@ def train():
             optimizer.step()
             
             train_loss += loss.item()
-            count += 1
-            # training accuracy
-            train_acc = (torch.sigmoid(pred) > 0.5).float()
-            
-        avg_train_loss = train_loss / max(count, 1)
+            train_correct += ((torch.sigmoid(pred) > 0.5).float() == y).sum().item()
+            train_total += y.size(0)
+
+        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
+        avg_train_acc = 100 * train_correct / (train_total + 1e-8)
         train_loss_data.append(avg_train_loss)
-        train_acc_data.append(100 * train_acc.sum().item() / (len(train_loader.dataset) + 1e-8))
-        
+        train_acc_data.append(avg_train_acc)
+
         # Validation
         model.eval()
         correct = 0
         total = 0
-        
+        val_loss = 0
+
         with torch.no_grad():
             for X, y in val_loader:
-                if X is None: continue
+                if X is None:
+                    continue
                 X, y = X.to(DEVICE), y.to(DEVICE)
-                
-                # Sigmoid for accuracy
-                probs = torch.sigmoid(model(X))
-                preds = (probs > 0.5).float()
-                
+
+                logits = model(X)  # Single forward pass
+
+                val_loss += criterion(logits, y).item()
+
+                preds = (torch.sigmoid(logits) > 0.5).float()
                 correct += (preds == y).sum().item()
                 total += y.size(0)
-                # validation loss
-                val_loss = criterion(model(X), y)
-        
+
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0
-      
-        
         acc = 100 * correct / (total + 1e-8)
         val_acc_data.append(acc)
         val_loss_data.append(avg_val_loss)
-        print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Acc: {acc:.2f}%")
-        
-        if acc >= best_acc and acc > 50.0: # Only save if better than random guessing
+
+        print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% "
+              f"| Val Loss: {avg_val_loss:.4f} | Val Acc: {acc:.2f}%")
+
+        if acc > best_acc and acc > 50.0:
             best_acc = acc
             torch.save(model.state_dict(), SAVE_PATH)
-            print(f">> Saved Best Model ({acc:.2f}%)")
+            print(f"  >> Saved Best Model ({acc:.2f}%)")
 
-    print(f"Done. Final model saved to {SAVE_PATH}")
+    print(f"Done. Best Val Acc: {best_acc:.2f}%")
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation Loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("frequency_model_training_loss.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_acc_data, label='Training Accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs') 
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.savefig("frequency_model_training_accuracy.png")
+    plt.close()
 
 if __name__ == "__main__":
     train()

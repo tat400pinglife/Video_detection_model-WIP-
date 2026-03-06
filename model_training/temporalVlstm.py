@@ -21,54 +21,11 @@ LR = 0.0001
 EPOCHS = 20
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# class TemporalSequenceDataset(Dataset):
-#     def __init__(self, folder_path, seq_len=5, is_train=True):
-#         self.files = list(Path(folder_path).rglob("*.pt"))
-#         self.seq_len = seq_len
-#         self.is_train = is_train
-
-#     def __len__(self):
-#         return len(self.files)
-
-#     def __getitem__(self, idx):
-#         try:
-#             data = torch.load(self.files[idx])
-#             # Load the sequence: [31, 1, 256, 256]
-#             full_seq = data['diff_seq'].float()
-#             label = torch.tensor([data['label']], dtype=torch.float32)
-
-#             total_frames = full_seq.shape[0]
-#             # Safety: If video is too short, pad it
-#             if total_frames < self.seq_len:
-#                 pad = torch.zeros(self.seq_len - total_frames, 1, 256, 256)
-#                 full_seq = torch.cat([full_seq, pad], dim=0)
-#                 total_frames = self.seq_len
-
-#             # SLICING STRATEGY
-#             if self.is_train:
-#                 # Random slice for training (Augmentation)
-#                 max_start = total_frames - self.seq_len
-#                 start_idx = random.randint(0, max_start)
-#             else:
-#                 # Center slice for validation (Consistency)
-#                 start_idx = (total_frames - self.seq_len) // 2
-
-#             # Extract the clip
-#             clip = full_seq[start_idx : start_idx + self.seq_len]
-            
-#             # Shape check: [Seq, 1, 256, 256]
-#             return clip, label
-
-#         except Exception as e:
-#             # print(f"Error loading {self.files[idx]}: {e}")
-#             return torch.zeros(self.seq_len, 1, 256, 256), torch.tensor([0.0])
 
 class TemporalSequenceDataset(Dataset):
     def __init__(self, folder_path):
         self.files = list(Path(folder_path).rglob("*.pt"))
         print(f"Temporal Dataset: Found {len(self.files)} samples.")
-        
-        # Pre-calculated grayscale weights for speed
         self.weights = torch.tensor([0.299, 0.587, 0.114]).view(3, 1, 1)
 
     def __len__(self): return len(self.files)
@@ -77,24 +34,30 @@ class TemporalSequenceDataset(Dataset):
         try:
             path = self.files[idx]
             data = torch.load(path, weights_only=False)
-            
-            # 1. Load RGB Batch (Uint8) -> Float32
-            rgb = data['rgb_batch'].float() / 255.0 # [32, 3, 256, 256]
-            
-            # 2. RECREATE MOTION (Live)
-            # Convert to grayscale manually (faster than looping OpenCV)
-            # [32, 3, H, W] * [3, 1, 1] -> Sum channels -> [32, H, W]
-            gray = (rgb * self.weights.to(rgb.device)).sum(dim=1)
-            
-            # Calculate Difference: Frame[t+1] - Frame[t]
-            diff_seq = torch.abs(gray[1:] - gray[:-1]) # [31, 256, 256]
-            diff_seq = diff_seq.unsqueeze(1)           # [31, 1, 256, 256]
-            
+
+            rgb = data['rgb_batch'].float() / 255.0  # [32, 3, 256, 256]
+
+            gray = (rgb * self.weights.to(rgb.device)).sum(dim=1)  # [32, 256, 256]
+
+            diff_seq = torch.abs(gray[1:] - gray[:-1])  # [31, 256, 256]
+            diff_seq = diff_seq.unsqueeze(1)             # [31, 1, 256, 256]
+
+            # Slice SEQ_LEN so dataset output always matches model expectation.
+            diff_seq = diff_seq[:SEQ_LEN]  # [SEQ_LEN, 1, 256, 256]
+
             y = torch.tensor([data['label']], dtype=torch.float32)
             return diff_seq, y
 
         except Exception as e:
+            print(f"Failed to load sample {idx}: {e}")
             return None
+
+def collate_fn(batch):
+    batch = [b for b in batch if b is not None]
+    if len(batch) == 0:
+        return None
+    return torch.utils.data.dataloader.default_collate(batch)
+
 
 def train():
     print(f"Using Device: {DEVICE}")
@@ -105,29 +68,14 @@ def train():
     train_acc_data = []
 
     # 1. Setup Data
-    # We split the file list first to ensure no leakage
-    all_files = list(Path(DATA_FOLDER).rglob("*.pt"))
-    random.shuffle(all_files)
-    
-    split_idx = int(0.8 * len(all_files))
-    train_files = all_files[:split_idx]
-    val_files = all_files[split_idx:]
-    
-    # Create Datasets
-    # We pass the list of files to the dataset (requires modifying __init__ slightly or just filtering inside)
-    # Ideally, we just point the dataset to the folder, but to handle train/val split correctly with random slicing:
     full_dataset = TemporalSequenceDataset(DATA_FOLDER)
-    
-    # Split
-    train_size = int(0.8 * len(full_dataset))
-    val_size = len(full_dataset) - train_size
-    train_set, val_set = random_split(full_dataset, [train_size, val_size])
-    
-    # Turn off random slicing for validation set
-    val_set.dataset.is_train = False 
 
-    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    train_size = int(0.8 * len(full_dataset))
+    val_size   = len(full_dataset) - train_size
+    train_set, val_set = random_split(full_dataset, [train_size, val_size])
+
+    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,num_workers=4, collate_fn=collate_fn)
+    val_loader   = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False,num_workers=4, collate_fn=collate_fn)
 
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
@@ -141,72 +89,68 @@ def train():
     
     for epoch in range(EPOCHS):
         model.train()
-        train_loss = 0
-        
-        for X, y in train_loader:
+        train_loss    = 0
+        train_correct = 0
+        train_total   = 0
+
+        for batch in train_loader:
+            if batch is None:
+                continue
+
+            X, y = batch
             X, y = X.to(DEVICE), y.to(DEVICE)
-            
+
             optimizer.zero_grad()
             pred = model(X)
             loss = criterion(pred, y)
-            
             loss.backward()
             optimizer.step()
-            train_loss += loss.item()
-            # training accuracy
-            train_acc = (torch.sigmoid(pred) > 0.5).float()
-    
-        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
-        train_loss_data.append(avg_train_loss)
-        train_acc_data.append(100 * train_acc.sum().item() / (len(train_loader.dataset) + 1e-8))
-            
-            
-# --- VALIDATION STEP ---
-        model.eval()
-        correct = 0
-        total = 0
-        val_loss = 0
-        
-        print("\n[DEBUG] Validation Sample Predictions:")
-        
-        with torch.no_grad():
-            batch_count = 0
-            for batch in val_loader:
-                # FIX: Unpack only 2 items (Input, Label)
-                # The validation loader for Temporal only yields (diff_seq, label)
-                diff_seq, labels = [x.to(DEVICE) for x in batch]
-                
-                # Forward Pass (Only feed diff_seq)
-                output = model(diff_seq) 
-                
-                # Calculate Loss
-                loss = criterion(output, labels)
-                val_loss += loss.item()
-                
-                # Get Predictions
-                preds = torch.sigmoid(output)
 
-                # Accuracy Calc
-                predicted_labels = (preds > 0.5).float()
-                correct += (predicted_labels == labels).sum().item()
-                total += labels.size(0)
-                batch_count += 1
-                
+            train_loss    += loss.item()
+            train_correct += ((torch.sigmoid(pred) > 0.5).float() == y).sum().item()
+            train_total   += y.size(0)
+
         avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0
-        avg_val_loss = val_loss / len(val_loader)
-        acc = 100 * correct / (total + 1e-8)
+        avg_train_acc  = 100 * train_correct / (train_total + 1e-8)
+        train_loss_data.append(avg_train_loss)
+        train_acc_data.append(avg_train_acc)
+
+        # --- VALIDATION ---
+        model.eval()
+        correct  = 0
+        total    = 0
+        val_loss = 0
+
+        with torch.no_grad():
+            for batch in val_loader:
+                if batch is None:
+                    continue
+
+                diff_seq, labels = [x.to(DEVICE) for x in batch]
+                output = model(diff_seq)
+
+                val_loss += criterion(output, labels).item()
+
+                predicted_labels = (torch.sigmoid(output) > 0.5).float()
+                correct += (predicted_labels == labels).sum().item()
+                total   += labels.size(0)
+
+        avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0
+        acc          = 100 * correct / (total + 1e-8)
         val_acc_data.append(acc)
         val_loss_data.append(avg_val_loss)
 
-        print(f"Epoch {epoch+1} | Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Acc: {acc:.2f}%")
-        # stop if loss is less 0.2
-        if avg_train_loss < 0.2:
-            torch.save(model.state_dict(), SAVE_PATH)
-            print("Model saved.")
-            break
+        print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% "
+              f"| Val Loss: {avg_val_loss:.4f} | Val Acc: {acc:.2f}%")
 
-    torch.save(model.state_dict(), SAVE_PATH)
-    
+        if acc > best_acc:
+            best_acc = acc
+            torch.save(model.state_dict(), SAVE_PATH)
+            print(f"  >> Best model saved — Val Acc: {best_acc:.2f}%")
+
+    print(f"\nTraining complete. Best Val Acc: {best_acc:.2f}%")
+
+    # Plots
     plt.figure(figsize=(10, 5))
     plt.plot(train_loss_data, label="Train Loss")
     plt.plot(val_loss_data, label="Val Loss")
@@ -215,7 +159,7 @@ def train():
     plt.legend()
     plt.title("Training and Validation Loss")
     plt.savefig("temporal_model_training_loss.png")
-    
+    plt.close()
     plt.figure(figsize=(10, 5))
     plt.plot(train_acc_data, label="Train Accuracy")
     plt.plot(val_acc_data, label="Val Accuracy")
@@ -224,7 +168,7 @@ def train():
     plt.legend()
     plt.title("Training and Validation Accuracy")
     plt.savefig("temporal_model_training_accuracy.png")
-
+    plt.close()
 
     print("Done.")
 
