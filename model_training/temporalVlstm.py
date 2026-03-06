@@ -18,7 +18,7 @@ SAVE_PATH = "models/temporal_lstm.pth"
 BATCH_SIZE = 16 # unless you have a giga device dont increase this by too much
 SEQ_LEN = 12     
 LR = 0.0001
-EPOCHS = 20
+EPOCHS = 50
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 

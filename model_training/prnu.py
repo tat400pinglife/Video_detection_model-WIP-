@@ -16,7 +16,7 @@ DATA_FOLDER = "./data/processed_data"
 SAVE_PATH = "models/noise_model.pth"
 BATCH_SIZE = 32
 LR = 0.001
-EPOCHS = 50 # adjust accordingly
+EPOCHS = 100 # adjust accordingly
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = 4
 

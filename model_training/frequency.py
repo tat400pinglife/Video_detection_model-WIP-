@@ -15,7 +15,7 @@ DATA_FOLDER = "./data/processed_data"
 SAVE_PATH = "models/frequency_model.pth"
 BATCH_SIZE = 32
 LR = 0.0001 
-EPOCHS = 15
+EPOCHS = 100
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = 4 
 
