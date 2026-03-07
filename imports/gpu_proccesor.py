@@ -80,7 +80,7 @@ def process_video_gpu(video_path, output_dir, label, max_frames=32):
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vid_path_obj = Path(video_path)
-    out_path = Path(output_dir) / f"{vid_path_obj.stem}.pt"
+    out_path = Path(output_dir) / f"{vid_path_obj.stem}.pt"\
 
     try:
         # 1. CPU Extraction (Using space.py's methods for exact parity)
