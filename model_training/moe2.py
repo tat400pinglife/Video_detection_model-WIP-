@@ -178,7 +178,7 @@ def train():
     plt.ylabel('Loss')
     plt.legend()
     plt.title('Training and Validation Loss')
-    plt.savefig('moe_model_training_loss.png')
+    plt.savefig('./plots/moe_model_training_loss.png')
     plt.close()
 
     plt.figure(figsize=(10, 5))
@@ -188,7 +188,7 @@ def train():
     plt.ylabel('Accuracy (%)')
     plt.legend()
     plt.title('Training and Validation Accuracy')
-    plt.savefig('moe_model_training_accuracy.png')
+    plt.savefig('./plots/moe_model_training_accuracy.png')
     plt.close()
 
     print("Done.")

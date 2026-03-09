@@ -158,7 +158,7 @@ def train_supervised():
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig("artifact_model_training_loss.png"); 
+    plt.savefig("./plots/artifact_model_training_loss.png"); 
     plt.close()
 
     plt.figure(figsize=(10, 5))
@@ -168,7 +168,7 @@ def train_supervised():
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
     plt.legend()
-    plt.savefig("artifact_model_training_accuracy.png")
+    plt.savefig("./plots/artifact_model_training_accuracy.png")
     plt.close()
     print("Done.")
 

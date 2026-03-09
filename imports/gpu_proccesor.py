@@ -39,29 +39,39 @@ def compute_features_gpu(frames_numpy, device=torch.device('cuda')):
     # ==========================================================
     # C. Frequency Analysis (Hardware FFT)
     # ==========================================================
-    gray_mid = gray[mid_idx, 0]
-    fft_complex = torch.fft.fft2(gray_mid)
-    fft_shift = torch.fft.fftshift(fft_complex)
-    mag = torch.log1p(torch.abs(fft_shift))
-    mag = (mag - mag.min()) / (mag.max() - mag.min() + 1e-6)
+    # gray_mid = gray[mid_idx, 0]
+    # fft_complex = torch.fft.fft2(gray_mid)
+    # fft_shift = torch.fft.fftshift(fft_complex)
+    # mag = torch.log1p(torch.abs(fft_shift))
+    # mag = (mag - mag.min()) / (mag.max() - mag.min() + 1e-6)
+    fft_complex = torch.fft.fft2(gray)
+    fft_shift = torch.fft.fftshift(fft_complex, dim =(-2, -1))
+    # taking magnitude overall, this is for performance for fft model
+    mag_all = torch.log1p(torch.abs(fft_shift))
+    mag_avg = mag_all.mean(dim = 0, keepdim = True)
+    mag_norm = (mag_avg - mag_avg.min()) / (mag_avg.max() - mag_avg.min() + 1e-6)
     
     # ==========================================================
     # D. PRNU / Noise Fingerprint (Hardware Convolution)
     # try to mimic cv2.GaussianBlur(..., sigma=0)
     # ==========================================================
-    # 1. Isolate only the middle frame (Matches space.py)
-    g = gray[mid_idx].unsqueeze(0) # Shape: [1, 1, 256, 256]
-    
-    # 2. Hardcode OpenCV's secret binomial approximation kernel
+    # 1. Hardcode OpenCV's secret binomial approximation kernel
+    # g = gray[mid_idx].unsqueeze(0) # Shape: [1, 1, 256, 256
     k1d = torch.tensor([1, 4, 6, 4, 1], dtype=torch.float32, device=device) / 16.0
     k2d = torch.outer(k1d, k1d).view(1, 1, 5, 5)
     
-    # 3. Apply mirror padding to match cv2 BORDER_REFLECT_101
-    g_pad = F.pad(g, (2, 2, 2, 2), mode='reflect')
+    # 2. Apply mirror padding to match cv2 BORDER_REFLECT_101
+    g_pad = F.pad(gray, (2, 2, 2, 2), mode='reflect')
     
-    # 4. Blur and subtract to find the noise map
+    # 3. Blur and subtract to find the noise map
     blurred = F.conv2d(g_pad, k2d)
-    prnu_map = g - blurred
+
+    prnu_all = gray - blurred
+    # prnu_map = g - blurred
+    prnu_map = prnu_all.mean(dim=0, keepdim = True) # same shape just more context from frames
+    # if this still doesnt boost the accuracy numbers, need to increase the size to 512
+    # it is a 4x size but it shouldnt affect that much except for the tensor creation speed.
+    # model architecture has adaptive pooling so the change shouldnt cause any issues.
 
     # Return intermediate tensors (Memory compression happens in process_video_gpu)
     return {
@@ -70,7 +80,8 @@ def compute_features_gpu(frames_numpy, device=torch.device('cuda')):
         "diff_seq": diff_seq.unsqueeze(0), 
         "diff": diff_mid.unsqueeze(0).unsqueeze(0),
         "prnu": prnu_map,                        # Output: [1, 1, 256, 256]
-        "fft": mag.unsqueeze(0).unsqueeze(0)     # Output: [1, 1, 256, 256]
+        # "fft": mag.unsqueeze(0).unsqueeze(0)
+        "fft": mag_norm     # Output: [1, 1, 256, 256]
     }
 
 def process_video_gpu(video_path, output_dir, label, max_frames=32):

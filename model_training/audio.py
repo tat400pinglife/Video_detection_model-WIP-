@@ -199,7 +199,7 @@ def train():
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig("audio_model_training_loss.png")
+    plt.savefig("./plots/audio_model_training_loss.png")
     plt.close()
 
     plt.figure(figsize=(10, 5))
@@ -209,7 +209,7 @@ def train():
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
     plt.legend()
-    plt.savefig("audio_model_training_accuracy.png")
+    plt.savefig("./plots/audio_model_training_accuracy.png")
     plt.close()
 
     print("Done.")
