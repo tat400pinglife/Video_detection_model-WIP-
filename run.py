@@ -118,7 +118,7 @@ class DeepfakeInvestigator:
         
         for i, frames in enumerate(clips):
             # Compute Features
-            feats = compute_features(frames, video_path, device=self.device)
+            feats = compute_features(frames, video_path,0, 16,device=self.device)
             
             with torch.no_grad():
                 # Router
@@ -201,7 +201,7 @@ class DeepfakeInvestigator:
             if len(frames) != 32: continue
             
             frames_arr = np.array(frames)
-            feats = compute_features(frames_arr, video_path, device=self.device)
+            feats = compute_features(frames_arr, video_path, start, step_frames, device=self.device)
             
             with torch.no_grad():
                 w = self.system.router(feats['rgb_mid'])[0].cpu().numpy()
