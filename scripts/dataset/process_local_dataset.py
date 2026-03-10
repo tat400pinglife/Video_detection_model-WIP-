@@ -43,8 +43,8 @@ def download_archive(url, filename="Real_part_aa.tar.gz"):
 
 def process_local_archive(archive_name="Real_part_aa.tar.gz", 
                           label="real", 
-                          start_idx=50, 
-                          end_idx=200, 
+                          start_idx=1, 
+                          end_idx=907, 
                           delete_after=True, 
                           tensorize_fn=process_video_gpu):
     """Iterates through the local archive, extracts a specific range, and processes them."""
@@ -137,7 +137,7 @@ if __name__ == "__main__":
             archive_name="Real_part_aa.tar.gz",
             label="real",
             start_idx=1,      # Start at video 50
-            end_idx=501,     # Stop before video 200
+            end_idx=930,     # Stop before video 200
             delete_after=True, # Keeps your storage entirely clean
             tensorize_fn=process_video_gpu
         )
