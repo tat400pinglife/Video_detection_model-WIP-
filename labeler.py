@@ -3,6 +3,8 @@ from tkinter import filedialog, messagebox
 import csv
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager # Optional but helpful
 
 class ShortsLabeler:
     def __init__(self, root):
