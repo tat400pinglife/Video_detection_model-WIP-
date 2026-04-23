@@ -26,8 +26,8 @@ if __name__ == "__main__":
         link_folder=Path("./scripts/youtube/csvs"), 
         path=Path("./data/videos/temp"),
         start=0,
-        goal=5,                     # The 350 new links you are targeting
-        wait=10000,                       # 5 second wait to avoid YouTube rate limits/bans
+        goal=1000,                     # The 350 new links you are targeting
+        wait=3,                       # 5 second wait to avoid YouTube rate limits/bans
         fn=process_video_gpu,         # Feed the .mp4 straight to the GPU
         delete_after=True,            # Instantly delete the .mp4 to save space
         output_dir="./data/processed_data/real", 

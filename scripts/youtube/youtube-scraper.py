@@ -357,6 +357,7 @@ def save_video_batch(
     
     end = min(length, start + goal)
     count = start
+    current_wait = 0 
     for url, valid in tqdm(df.iloc[start:end].itertuples(index=False, name='Row'),
                     desc="Downloading videos",
                     unit="th video"):
@@ -374,7 +375,8 @@ def save_video_batch(
             if delete_after:
                 os.remove(res_path)
         count += 1
-        time.sleep(wait)
+        time.sleep(current_wait)
+        current_wait += wait
     print(f"Finished processing videos from [{start}, {end}).")
 
 
