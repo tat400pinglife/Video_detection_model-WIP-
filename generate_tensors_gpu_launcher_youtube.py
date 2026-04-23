@@ -4,7 +4,7 @@ from pathlib import Path
 
 # --- SETUP PATHS ---
 root_dir = Path(__file__).resolve().parent
-sys.path.append(str(root_dir / 'scripts' / 'scraper'))
+sys.path.append(str(root_dir / 'scripts' / 'youtube'))
 sys.path.append(str(root_dir)) 
 
 # --- IMPORT YOUR GPU PROCESSOR ---
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # Run the exact same Producer-Consumer loop as the TikTok scraper
     yt_scraper.save_video_batch(
         # IMPORTANT: Make sure your youtube.csv is in this folder, separated from TikTok CSVs!
-        link_folder=Path("./scripts/youtube/youtube_csvs"), 
+        link_folder=Path("./scripts/youtube/csvs"), 
         path=Path("./data/videos/temp"),
         start=0,
         goal=5,                     # The 350 new links you are targeting
