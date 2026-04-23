@@ -12,3 +12,4 @@ hftk.txt
 google-chrome-stable_current_amd64.deb
 /PlotNeuralNet
 .env
+venv/
