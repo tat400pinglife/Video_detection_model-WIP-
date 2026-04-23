@@ -180,7 +180,7 @@ def save_video_batch(
             dfs = [pd.read_csv(file) for file in csv_files]
             df = pd.concat(dfs, ignore_index=True)
             
-            print(f"Loaded {len(links)} URLs from {len(csv_files)} CSV files")
+            print(f"Loaded {len(df)} URLs from {len(csv_files)} CSV files")
         else:
             print(f"No CSV files found in {link_folder}")
 
@@ -198,7 +198,7 @@ def save_video_batch(
     current_wait = 0 
     for url, ai in tqdm(df.iloc[start:end].itertuples(index=False, name='Row'),
                     desc="Downloading videos",
-                    unit="video"):
+                    unit="th video"):
         if ai == 'n' or pd.isna(ai):
             # Not an AI video OR unvalidated, skip
             continue
