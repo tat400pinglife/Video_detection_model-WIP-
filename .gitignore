@@ -1,11 +1,11 @@
-/data/frames
+/data/imported_data
 /data/processed_data
+/data/videos
 /imports/__pycache__
 /scripts/scraper/__pycache__
 /uploads
 /resources
 *.pth
-/data
 /models
 hftk.txt
 /myStuff

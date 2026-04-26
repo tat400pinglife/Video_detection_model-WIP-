@@ -30,6 +30,9 @@ import tiktok_lib as tt
 
 # from imports.gpu_proccesor import process_video_gpu
 
+import socket
+socket.setdefaulttimeout(240)  # Force a strict 15-second timeout on ALL network requests
+
 options = Options()
 service = Service(ChromeDriverManager().install())
 
