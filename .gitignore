@@ -2,7 +2,9 @@
 /data/processed_data
 /data/videos
 /imports/__pycache__
+imports/__pycache__/*
 /scripts/scraper/__pycache__
+/scripts/scraper/__pycache__/*.pyc
 /uploads
 /resources
 *.pth
@@ -13,3 +15,5 @@ google-chrome-stable_current_amd64.deb
 /PlotNeuralNet
 .env
 venv/
+__pycache__/
+*.pyc
