@@ -364,19 +364,38 @@ def save_video_batch(
         if valid == 'n' or pd.isna(valid):
             # Not an valid video OR unvalidated, skip
             continue
+        # Extract the YouTube ID from the URL (works for both Shorts and standard URLs)
+        if "watch?v=" in url:
+            vid_id = url.split("watch?v=")[-1].split("&")[0]
+        else:
+            vid_id = url.split("/")[-1].split("?")[0]
+
+        # Check if any file containing this video ID exists in the output directory
+        output_dir = kwargs.get('output_dir')
+        if output_dir:
+            out_path = Path(output_dir)
+            if out_path.exists() and any(out_path.glob(f"*{vid_id}*")):
+                # Tensor found! Skip the download.
+                count += 1
+                continue
+        # ---------------------------------------------
+
         
         try:
             res_path = save_video_from_url(url, path)
         except Exception as e:
             print(f"Error on index {count} with {url}: {e}")
             continue 
+        if res_path is None:
+            print(f"Skipped index {count}: Download failed or video unavailable.")
         if fn != None and res_path != None and os.path.exists(res_path):
             fn(res_path, *args, **kwargs)
             if delete_after:
                 os.remove(res_path)
         count += 1
         time.sleep(current_wait)
-        current_wait += wait
+        if current_wait < 15:
+            current_wait += wait
     print(f"Finished processing videos from [{start}, {end}).")
 
 
