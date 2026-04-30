@@ -16,10 +16,11 @@ warnings.filterwarnings("ignore")
 DATA_FOLDER = "./data/processed_data"
 SAVE_PATH = "models/temporal_lstm.pth"
 BATCH_SIZE = 16 # unless you have a giga device dont increase this by too much
-SEQ_LEN = 12     
-LR = 0.0001
+SEQ_LEN = 25     
+LR = 0.00001
 EPOCHS = 50
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+PATIENCE = 8 # Early stopping patience
 
 
 class TemporalSequenceDataset(Dataset):
@@ -79,13 +80,16 @@ def train():
 
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    # 2. Setup Model
+    # 2. Setup Model & Upgraded Optimizer
     model = TemporalDetector(sequence_length=SEQ_LEN).to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    # change to adamw since it was overfitting
+    # 1e-3 is a strong starting penalty to prevent weight memorization.
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     criterion = nn.BCEWithLogitsLoss()
 
-    # 3. Training Loop
-    best_acc = 0.0
+    # 3. Training Loop Variables
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
     
     for epoch in range(EPOCHS):
         model.train()
@@ -143,31 +147,51 @@ def train():
         print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% "
               f"| Val Loss: {avg_val_loss:.4f} | Val Acc: {acc:.2f}%")
 
-        if acc > best_acc:
-            best_acc = acc
+        # Checkpoint based on LOWEST Validation Loss, not highest accuracy
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            epochs_no_improve = 0
             torch.save(model.state_dict(), SAVE_PATH)
-            print(f"  >> Best model saved — Val Acc: {best_acc:.2f}%")
+            print(f"  >> Best model saved — Val Loss: {best_val_loss:.4f} (Acc: {acc:.2f}%)")
+        else:
+            epochs_no_improve += 1
+            print(f"  -- No improvement in Val Loss for {epochs_no_improve} epoch(s).")
+            
+            if epochs_no_improve >= PATIENCE:
+                print(f"\nValidation loss has not improved for {PATIENCE} epochs.")
+                break
 
-    print(f"\nTraining complete. Best Val Acc: {best_acc:.2f}%")
+    print(f"\nTraining complete. Best Val Loss: {best_val_loss:.4f}")
 
-    # Plots
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_loss_data, label="Train Loss")
-    plt.plot(val_loss_data, label="Val Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title("Training and Validation Loss")
-    plt.savefig("./plots/temporal_model_training_loss.png")
+    # Minimalist Plots
+    Path("./plots").mkdir(exist_ok=True)
+    
+    # Loss Plot
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(train_loss_data, label="Train Loss", color='#1f77b4', linewidth=2)
+    ax.plot(val_loss_data, label="Val Loss", color='#ff7f0e', linewidth=2)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_xlabel("Epoch", labelpad=10)
+    ax.set_ylabel("Loss", labelpad=10)
+    ax.legend(frameon=False)
+    plt.title("Training and Validation Loss", pad=15)
+    plt.tight_layout()
+    plt.savefig("./plots/temporal_model_training_loss.png", dpi=300)
     plt.close()
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_acc_data, label="Train Accuracy")
-    plt.plot(val_acc_data, label="Val Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy (%)")
-    plt.legend()
-    plt.title("Training and Validation Accuracy")
-    plt.savefig("./plots/temporal_model_training_accuracy.png")
+
+    # Accuracy Plot
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(train_acc_data, label="Train Accuracy", color='#2ca02c', linewidth=2)
+    ax.plot(val_acc_data, label="Val Accuracy", color='#d62728', linewidth=2)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_xlabel("Epoch", labelpad=10)
+    ax.set_ylabel("Accuracy (%)", labelpad=10)
+    ax.legend(frameon=False)
+    plt.title("Training and Validation Accuracy", pad=15)
+    plt.tight_layout()
+    plt.savefig("./plots/temporal_model_training_accuracy.png", dpi=300)
     plt.close()
 
     print("Done.")

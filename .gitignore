@@ -17,3 +17,4 @@ google-chrome-stable_current_amd64.deb
 venv/
 __pycache__/
 *.pyc
+/video_dataset

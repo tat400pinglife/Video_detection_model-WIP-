@@ -2085,3 +2085,82 @@ FINAL STEP: TRAINING MOE ROUTER
 >> [SUCCESS] MoE Router finished in 715.4s.
 
  Done
+Starting YouTube bulk download and tensorization...
+Loaded 905 URLs from 1 CSV files
+Downloading videos: 0th video [00:00, ?th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] QBmuw42FVcQ: This video is not available
+Downloading videos: 133th video [00:00, 138.94th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] 1AD-Mm90XWE: This video is not available
+Downloading videos: 243th video [00:05, 42.42th video/s] Starting YouTube bulk download and tensorization...
+Loaded 905 URLs from 1 CSV files
+Downloading videos: 0th video [00:00, ?th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] 9FDVvWR91ww: This video is not available
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] QBmuw42FVcQ: This video is not available
+Downloading videos: 133th video [00:01, 128.38th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] 1AD-Mm90XWE: This video is not available
+Downloading videos: 243th video [00:04, 44.14th video/s] WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] 9FDVvWR91ww: This video is not available
+Downloading videos: 571th video [00:11, 45.90th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] mvWpPHHSdyk: This video is not available
+Downloading videos: 571th video [00:11, 45.95th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] mvWpPHHSdyk: This video is not available
+Downloading videos: 750th video [00:21, 29.61th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] i3oShKMyifw: This video is not available
+Downloading videos: 750th video [00:21, 29.88th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] i3oShKMyifw: This video is not available
+Downloading videos: 755th video [00:34, 14.52th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] NgdRu7dT2-g: This video is not available
+Downloading videos: 755th video [00:34, 14.48th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] NgdRu7dT2-g: This video is not available
+Downloading videos: 759th video [00:50,  7.69th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] QLuoeubcC1c: This video is not available
+Downloading videos: 759th video [00:50,  7.69th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] QLuoeubcC1c: This video is not available
+Downloading videos: 771th video [01:06,  4.88th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] icpkNpl-v74: This video is not available
+Downloading videos: 771th video [01:06,  4.87th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] icpkNpl-v74: This video is not available
+Downloading videos: 793th video [01:22,  3.59th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] nCb9ZhKtNMo: This video is not available
+Downloading videos: 793th video [01:22,  3.60th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] nCb9ZhKtNMo: This video is not available
+Downloading videos: 828th video [01:38,  3.12th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] 4_CtbgUFSus: This video is not available
+Downloading videos: 827th video [01:36,  8.56th video/s]
+Skipped index 112: Download failed or video unavailable.
+Skipped index 201: Download failed or video unavailable.
+Skipped index 348: Download failed or video unavailable.
+Skipped index 464: Download failed or video unavailable.
+Skipped index 465: Download failed or video unavailable.
+Skipped index 466: Download failed or video unavailable.
+Skipped index 476: Download failed or video unavailable.
+Skipped index 487: Download failed or video unavailable.
+Skipped index 514: Download failed or video unavailable.
+Traceback (most recent call last):
+  File "/data/chow25/workingFolder/Video_detection_model-WIP-/generate_tensors_gpu_launcher_youtube.py", line 24, in <module>
+    yt_scraper.save_video_batch(
+  File "/data/chow25/workingFolder/Video_detection_model-WIP-/scripts/youtube/youtube-scraper.py", line 396, in save_video_batch
+    time.sleep(current_wait)
+KeyboardInterrupt
+Downloading videos: 838th video [01:54,  2.30th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] i79PShDoiZA: This video is not available
+Downloading videos: 843th video [02:10,  1.66th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] pBfQft4QDw4: Sign in to confirm your age. The video you have requested has been rated D+ S+ L+ V+ N+ and may contain content intended for mature audiences. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+Downloading videos: 901th video [02:26,  2.28th video/s]WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+ERROR: [youtube] crcZSa52H9I: Sign in to confirm your age. This video may be inappropriate for some users. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+Downloading videos: 902th video [02:42,  1.60th video/s]Downloading videos: 905th video [02:42,  5.58th video/s]
+Skipped index 112: Download failed or video unavailable.
+Skipped index 201: Download failed or video unavailable.
+Skipped index 348: Download failed or video unavailable.
+Skipped index 464: Download failed or video unavailable.
+Skipped index 465: Download failed or video unavailable.
+Skipped index 466: Download failed or video unavailable.
+Skipped index 476: Download failed or video unavailable.
+Skipped index 487: Download failed or video unavailable.
+Skipped index 514: Download failed or video unavailable.
+Skipped index 520: Download failed or video unavailable.
+Skipped index 523: Download failed or video unavailable.
+Skipped index 551: Download failed or video unavailable.
+Skipped index 552: Download failed or video unavailable.
+Finished processing videos from [0, 905).
