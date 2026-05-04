@@ -15,7 +15,7 @@ from model_architecture import PRNUBranch
 DATA_FOLDER = "./data/processed_data"
 SAVE_PATH = "models/noise_model.pth"
 BATCH_SIZE = 32
-LR = 0.001
+LR = 0.0001
 EPOCHS = 100 # adjust accordingly
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = 4
@@ -118,7 +118,8 @@ def train_noise_expert():
     net = PRNUBranch().to(DEVICE)
     head = nn.Linear(32, 1).to(DEVICE)
 
-    optimizer = optim.Adam(list(net.parameters()) + list(head.parameters()), lr=LR)
+    optimizer = optim.AdamW(list(net.parameters()) + list(head.parameters()), lr=LR)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     criterion = nn.BCEWithLogitsLoss()
     
     best_acc = 0.0

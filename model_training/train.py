@@ -23,7 +23,7 @@ TRAIN_MOE_ROUTER = True
 SCRIPTS = {
     #"temporal": "temporal.py",
     "temporal": "model_training/temporalVlstm.py",
-    "artifact": "model_training/AreaDetectionModel.py", 
+    "artifact": "model_training/artifactv2.py", 
     "noise":    "model_training/prnu.py",
     "freq":     "model_training/frequency.py",
     "audio":    "model_training/audio.py"   

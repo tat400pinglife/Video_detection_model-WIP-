@@ -171,9 +171,9 @@ class MoE_Investigator(nn.Module):
             out_temp = torch.sigmoid(self.expert_temp(diff_seq))
             
             # 2. Artifact Expert
-            # amax over spatial dims instead of flatten().max().
-            # Avoids creating a [B, H*W] intermediate tensor (e.g. 196k elements/item).
-            out_art = torch.sigmoid(self.expert_art(rgb_mid)).amax(dim=[1, 2, 3]).unsqueeze(1)
+            art_mask = torch.sigmoid(self.expert_art(rgb_mid))
+            # Flatten the 256x256 image, grab the top 500 hottest pixels, and average them
+            out_art = art_mask.view(art_mask.size(0), -1).topk(500, dim=1)[0].mean(dim=1, keepdim=True)
             
             # 3. Noise (PRNU) Expert
             out_noise = torch.sigmoid(self.expert_noise_head(self.expert_noise_net(prnu_var)))

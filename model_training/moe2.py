@@ -13,14 +13,14 @@ from model_architecture import MoE_Investigator
 # CONFIGURATION
 DATA_FOLDER = "./data/processed_data"
 BATCH_SIZE = 16    
-LR = 0.001        
-EPOCHS = 50 # adjust accordingly
+LR = 0.0001        
+EPOCHS = 30 # adjust accordingly
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SEQ_LEN = 5 # match with lstm model
+SEQ_LEN = 25 # match with lstm model
 
 # DATASET
 class ForensicDataset(Dataset):
-    def __init__(self, folder_path, seq_len=5):
+    def __init__(self, folder_path, seq_len=25):
         self.seq_len = seq_len
         self.files = []
         for root, dirs, files in os.walk(folder_path):

@@ -8,7 +8,7 @@ import time
 # --- IMPORT YOUR GPU PROCESSOR ---
 root_dir = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(root_dir))
-from imports.gpu_proccesor import process_video_gpu
+from imports.combined import process_video_gpu
 
 def download_archive(url, filename="Real_part_aa.tar.gz"):
     """Downloads the massive dataset archive into the imported_data folder."""
@@ -46,7 +46,9 @@ def process_local_archive(archive_name="Real_part_aa.tar.gz",
                           start_idx=50, 
                           end_idx=200, 
                           delete_after=True, 
-                          tensorize_fn=process_video_gpu):
+                          tensorize_fn=process_video_gpu,
+                          max_frames=32,   
+                          num_clips=3):     
     """Iterates through the local archive, extracts a specific range, and processes them."""
     root_dir = Path(__file__).resolve().parent.parent.parent
     archive_path = root_dir / "data" / "imported_data" / archive_name
@@ -84,14 +86,20 @@ def process_local_archive(archive_name="Real_part_aa.tar.gz",
                         os.fsync(target.fileno())  # Ensure OS buffer is flushed to disk
 
                     
-                    print(f"\n[{current_idx}] Extracted {filename} -> Tensorizing...")
+                    print(f"\n[{current_idx}] Extracted {filename} -> Tensorizing into {num_clips} clips...")
                     
                     # 2. PROCESS to data/processed_data/real
                     success = False
                     try:
                         numeric_label = 0.0 if label == "real" else 1.0
                         for attempt in range(3):
-                            success = tensorize_fn(str(temp_mp4_path), output_dir=str(processed_folder), label=numeric_label)
+                            success = tensorize_fn(
+                                video_path=str(temp_mp4_path), 
+                                output_dir=str(processed_folder), 
+                                label=numeric_label,
+                                max_frames=max_frames,
+                                num_clips=num_clips
+                            )
                             if success:
                                 break # It worked! Break out of the retry loop.
                                 
@@ -136,9 +144,11 @@ if __name__ == "__main__":
         process_local_archive(
             archive_name="Real_part_aa.tar.gz",
             label="real",
-            start_idx=1,      # Start at video 50
-            end_idx=501,     # Stop before video 200
+            start_idx=1,      # Start at video 1
+            end_idx=306,     # Stop before video 306
             delete_after=True, # Keeps your storage entirely clean
-            tensorize_fn=process_video_gpu
+            tensorize_fn=process_video_gpu,
+            max_frames=32,   
+            num_clips=3      
         )
-    print(f"Code was run, {('ran download') if run_download else 'skipped downloading download'}, {('ran processing') if run_processing else 'skipped processing'}")
+    print(f"Code was run, {('ran download') if run_download else 'skipped downloading'}, {('ran processing') if run_processing else 'skipped processing'}")

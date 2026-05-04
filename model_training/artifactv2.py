@@ -9,16 +9,20 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 import time
+import matplotlib.pyplot as plt
+
+# Stop OpenCV from fighting with PyTorch Multiprocessing
+cv2.setNumThreads(0)
 
 # Import your architecture
 from model_architecture import ArtifactSegmentor
 
 # --- CONFIGURATION
 DATA_PATH = "./data/processed_data" 
-SAVE_DIR = "./models/checkpoints"   
+SAVE_DIR = "./models"   
 BATCH_SIZE = 32                     
 LR = 0.0001                           
-EPOCHS = 50
+EPOCHS = 15
 NUM_WORKERS = 4                   
 PIN_MEMORY = True                
 
@@ -116,7 +120,6 @@ class BigDataTensorDataset(Dataset):
 
             except Exception as e:
                 # If file is bad, pick a random OTHER file
-                # print(f"Warning: File {idx} corrupt. Retrying...")
                 idx = np.random.randint(0, len(self.files))
                 attempts += 1
         
@@ -141,6 +144,8 @@ def glitch_collate_fn(batch):
 # 4. MAIN TRAINING LOOP 
 def train_scale():
     os.makedirs(SAVE_DIR, exist_ok=True)
+    os.makedirs("./plots", exist_ok=True)
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"--- Starting Large Scale Training on {device} ---")
     
@@ -153,7 +158,6 @@ def train_scale():
     train_ds, val_ds = random_split(full_ds, [train_len, val_len])
     
     # Loaders with Multiprocessing
-    # collate_fn does the heavy lifting (glitch generation) on CPU cores
     train_loader = DataLoader(
         train_ds, 
         batch_size=BATCH_SIZE, 
@@ -179,15 +183,23 @@ def train_scale():
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
     
     # Reduce LR if validation loss stops improving for 3 epochs
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
     criterion = nn.BCEWithLogitsLoss()
     
     best_val_loss = float('inf')
+    
+    # Graph Tracking
+    train_loss_data = []
+    val_loss_data = []
+    val_acc_data = []
+    training_acc_data = []
     
     for epoch in range(1, EPOCHS + 1):
         # TRAIN
         model.train()
         train_loss = 0
+        train_correct = 0
+        train_total = 0
         loop = tqdm(train_loader, desc=f"Ep {epoch}/{EPOCHS} [Train]")
         
         for inputs, masks in loop:
@@ -202,25 +214,46 @@ def train_scale():
             optimizer.step()
             
             train_loss += loss.item()
+            
+            # Pixel-wise accuracy
+            preds = (torch.sigmoid(logits) > 0.5).float()
+            train_correct += (preds == masks).sum().item()
+            train_total += masks.numel()
+            
             loop.set_postfix(loss=loss.item())
             
         avg_train_loss = train_loss / len(train_loader)
+        avg_train_acc = 100 * train_correct / train_total
+        
+        train_loss_data.append(avg_train_loss)
+        training_acc_data.append(avg_train_acc)
         
         # VALIDATE
         model.eval()
         val_loss = 0
+        val_correct = 0
+        val_total = 0
         with torch.no_grad():
             for inputs, masks in val_loader:
                 if inputs is None: continue
                 inputs, masks = inputs.to(device, non_blocking=True), masks.to(device, non_blocking=True)
+                
                 logits = model(inputs)
                 loss = criterion(logits, masks)
                 val_loss += loss.item()
                 
+                preds = (torch.sigmoid(logits) > 0.5).float()
+                val_correct += (preds == masks).sum().item()
+                val_total += masks.numel()
+                
         avg_val_loss = val_loss / len(val_loader)
+        avg_val_acc = 100 * val_correct / val_total
+        
+        val_loss_data.append(avg_val_loss)
+        val_acc_data.append(avg_val_acc)
         
         # Logging
-        print(f"Results: Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        print(f"Results: Train Loss: {avg_train_loss:.4f} | Train Acc: {avg_train_acc:.2f}% | Val Loss: {avg_val_loss:.4f} | Val Acc: {avg_val_acc:.2f}%")
         
         # Step Scheduler
         scheduler.step(avg_val_loss)
@@ -228,11 +261,30 @@ def train_scale():
         # Save Best
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), f"{SAVE_DIR}/artifact_best.pth")
+            # Save exactly where moe2.py expects to find it
+            torch.save(model.state_dict(), f"{SAVE_DIR}/artifact_model.pth")
             print(">>> New Best Model Saved!")
-            
-        # Save Latest (Checkpoint)
-        torch.save(model.state_dict(), f"{SAVE_DIR}/artifact_latest.pth")
+
+    # --- PLOTTING ---
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_loss_data, label='Training Loss')
+    plt.plot(val_loss_data, label='Validation Loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("./plots/artifact_model_training_loss.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(training_acc_data, label='Training Accuracy')
+    plt.plot(val_acc_data, label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.savefig("./plots/artifact_model_training_accuracy.png")
+    plt.close()
 
     print("Done.")
 

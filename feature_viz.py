@@ -131,5 +131,5 @@ def plot_minimal_dashboard(data_stats, avg_maps):
 
 if __name__ == "__main__":
     dataset_path = "data/processed_data" 
-    stats, maps = load_data_sample(dataset_path, max_samples=300)
+    stats, maps = load_data_sample(dataset_path, max_samples=1000)
     plot_minimal_dashboard(stats, maps)

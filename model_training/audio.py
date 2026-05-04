@@ -99,7 +99,7 @@ def train():
         batch_size=32, 
         sampler=sampler, # Balances the training
         collate_fn=drop_silence_collate,
-        num_workers=0 # Set to 2 or 4 on Linux/Mac
+        num_workers=2 # Set to 2 or 4 on Linux/Mac
     )
     val_loader = DataLoader(
         val_set, 
@@ -110,12 +110,13 @@ def train():
 
     # 5. Model
     model = AudioExpert().to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    optimizer = optim.AdamW(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
     criterion = nn.BCEWithLogitsLoss()
 
     print(f"Starting Training on {DEVICE} (Train: {train_size}, Val: {val_size})...")
     best_val_acc = 0.0
-    patience = 5
+    patience = 20
     trigger_times = 0
     
     train_loss_data = []
