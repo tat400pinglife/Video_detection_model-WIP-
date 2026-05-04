@@ -7,8 +7,6 @@ imports/__pycache__/*
 /scripts/scraper/__pycache__/*.pyc
 /uploads
 /resources
-*.pth
-/models
 hftk.txt
 /myStuff
 google-chrome-stable_current_amd64.deb
