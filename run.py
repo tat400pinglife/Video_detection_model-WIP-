@@ -185,7 +185,7 @@ class DeepfakeInvestigator:
         score = v['final_score']
         fig = plt.figure(figsize=(20, 16)) 
         
-        plt.suptitle(f"Deepfake Investigation Unit | Result: {score:.1%} {v['verdict_text']}", 
+        plt.suptitle(f"Result: {score:.1%} {v['verdict_text']}", 
                      fontsize=20, fontweight='bold', color='red' if score > 0.5 else 'green', y=0.98)
         
         gs = gridspec.GridSpec(3, 5, height_ratios=[1, 1.2, 0.8], hspace=0.3)
@@ -263,6 +263,6 @@ class DeepfakeInvestigator:
 
 
 if __name__ == "__main__":
-    VIDEO_FILE = "data/videos/fake/Turkey ring.mp4" 
+    VIDEO_FILE = "data/videos/fake_ad.mp4"
     investigator = DeepfakeInvestigator()
     investigator.analyze(VIDEO_FILE)

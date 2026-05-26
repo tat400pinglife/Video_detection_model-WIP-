@@ -127,9 +127,9 @@ def plot_minimal_dashboard(data_stats, avg_maps):
 
     plt.tight_layout(pad=3.0)
     plt.savefig("feature_analysis_dashboard.png", dpi=300, bbox_inches='tight')
-    print("Analysis complete. Dashboard saved to 'feature_analysis_dashboard.png'")
+    print("Analysis complete. Dashboard saved to 'feature_analysis_dashboard(1).png'")
 
 if __name__ == "__main__":
     dataset_path = "data/processed_data" 
-    stats, maps = load_data_sample(dataset_path, max_samples=1000)
+    stats, maps = load_data_sample(dataset_path, max_samples=20)
     plot_minimal_dashboard(stats, maps)
